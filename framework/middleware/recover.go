@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/yourname/go-gear/framework"
+	"github.com/memory198/go-gear/framework"
 )
 
 func Recoverer(next http.Handler) http.Handler {

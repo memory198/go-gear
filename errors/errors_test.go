@@ -3,7 +3,7 @@ package errors_test
 import (
 	"testing"
 
-	"github.com/yourname/go-gear/errors"
+	"github.com/memory198/go-gear/errors"
 )
 
 func TestWithStack(t *testing.T) {

@@ -212,7 +212,7 @@ func callers(skip int) []frame {
 // isInternal 过滤 runtime 和 errors 包自身的帧
 func isInternal(fn string) bool {
 	return strings.HasPrefix(fn, "runtime.") ||
-		strings.Contains(fn, "github.com/yourname/go-gear/errors.")
+		strings.Contains(fn, "github.com/memory198/go-gear/errors.")
 }
 
 // shortFile 只保留最后两段路径，如 service/user/user.go

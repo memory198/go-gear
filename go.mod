@@ -1,4 +1,4 @@
-module github.com/yourname/go-gear
+module github.com/memory198/go-gear
 
 go 1.23
 
