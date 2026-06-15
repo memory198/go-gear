@@ -26,7 +26,13 @@ func Bind(r *http.Request, req any) error {
 	return nil
 }
 
-// QueryInt 从 Query 中读取 int，解析失败时返回 defaultVal
+// QueryInt 从 URL 查询参数中读取整数值
+// 参数：
+//   - r: HTTP 请求
+//   - key: 查询参数名
+//   - defaultVal: 解析失败或参数不存在时的默认值
+//
+// 返回：解析后的整数值，失败时返回默认值
 func QueryInt(r *http.Request, key string, defaultVal int) int {
 	val, err := strconv.Atoi(r.URL.Query().Get(key))
 	if err != nil {
@@ -35,7 +41,13 @@ func QueryInt(r *http.Request, key string, defaultVal int) int {
 	return val
 }
 
-// QueryString 从 Query 中读取 string，为空时返回 defaultVal
+// QueryString 从 URL 查询参数中读取字符串值
+// 参数：
+//   - r: HTTP 请求
+//   - key: 查询参数名
+//   - defaultVal: 参数为空或不存在时的默认值
+//
+// 返回：查询参数值，为空时返回默认值
 func QueryString(r *http.Request, key, defaultVal string) string {
 	if val := r.URL.Query().Get(key); val != "" {
 		return val

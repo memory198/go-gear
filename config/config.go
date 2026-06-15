@@ -27,9 +27,9 @@ type DatabaseConfig struct {
 }
 
 type LogConfig struct {
-	Level      string `yaml:"level"`      // debug / info / warn / error
-	Dir        string `yaml:"dir"`        // 日志目录，空则输出到 stdout
-	Filename   string `yaml:"filename"`   // 日志文件名（不含扩展名），空则取程序名
+	Level      string `yaml:"level"`       // debug / info / warn / error
+	Dir        string `yaml:"dir"`         // 日志目录，空则输出到 stdout
+	Filename   string `yaml:"filename"`    // 日志文件名（不含扩展名），空则取程序名
 	RollingDay bool   `yaml:"rolling_day"` // 是否按天滚动
 }
 
@@ -41,8 +41,6 @@ func defaultConfig() *Config {
 		Log:      LogConfig{Level: "info"},
 	}
 }
-
-
 
 // Load 加载配置：入口文件 < 环境变量 < 命令行 flag
 // 入口文件可通过 include 引用其他文件，重复 key 直接 panic
