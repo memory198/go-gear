@@ -55,6 +55,17 @@ config 包处理 YAML 配置加载，支持：
 - 使用 `framework.Handle(handlerFunc)` 将业务逻辑包装为 `http.HandlerFunc`
 - 使用 `framework.HandleContext(handlerFunc)` 使用自定义上下文包装业务逻辑
 
+路由推荐搭配 [chi](https://github.com/go-chi/chi)：`framework` 包不内置路由器、不依赖 chi，保持轻量、可独立引入；但 `Handle`/`HandleContext` 返回标准 `http.HandlerFunc`，`framework/middleware` 的中间件签名为 `func(http.Handler) http.Handler`，均可直接接入 chi，无需适配层：
+
+```go
+r := chi.NewRouter()
+r.Use(middleware.Recoverer, middleware.Logger)
+r.Post("/users", framework.Handle(createUser))
+r.Get("/users/{id}", framework.Handle(getUser))
+```
+
+若 handler 需要读取 chi 路径参数（如 `{id}`），需在 `Req` 上实现 `framework.Binder` 接口，在自定义 `Bind` 方法里调用 `chi.URLParam(r, "id")`（详见 `framework/bind.go` 的 `Binder` 接口）。
+
 自定义上下文功能：
 - **请求追踪**：自动生成或从请求头获取 trace ID，支持分布式追踪
 - **span管理**：通过 `StartSpan()` 创建子 span，支持分布式追踪链
