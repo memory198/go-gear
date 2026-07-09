@@ -27,10 +27,12 @@ type DatabaseConfig struct {
 }
 
 type LogConfig struct {
-	Level      string `yaml:"level"`       // debug / info / warn / error
-	Dir        string `yaml:"dir"`         // 日志目录，空则输出到 stdout
-	Filename   string `yaml:"filename"`    // 日志文件名（不含扩展名），空则取程序名
-	RollingDay bool   `yaml:"rolling_day"` // 是否按天滚动
+	Level    string `yaml:"level"`    // trace / debug / info / warn / error / fatal
+	Format   string `yaml:"format"`   // text / json，默认 text
+	Console  bool   `yaml:"console"`  // 是否输出到控制台
+	Dir      string `yaml:"dir"`      // 日志目录，空则不写文件
+	Filename string `yaml:"filename"` // 日志文件名（不含扩展名），空则取程序名
+	MaxAge   int    `yaml:"max_age"`  // 日志保留天数，<=0 不清理
 }
 
 // defaultConfig 默认配置
@@ -149,7 +151,13 @@ func overrideFromEnv(cfg *Config) {
 	if v := os.Getenv("APP_LOG_FILENAME"); v != "" {
 		cfg.Log.Filename = v
 	}
-	if v := os.Getenv("APP_LOG_ROLLING"); v == "true" {
-		cfg.Log.RollingDay = true
+	if v := os.Getenv("APP_LOG_FORMAT"); v != "" {
+		cfg.Log.Format = v
+	}
+	if v := os.Getenv("APP_LOG_CONSOLE"); v == "true" {
+		cfg.Log.Console = true
+	}
+	if v := os.Getenv("APP_LOG_MAX_AGE"); v != "" {
+		fmt.Sscanf(v, "%d", &cfg.Log.MaxAge)
 	}
 }
