@@ -33,6 +33,7 @@ type LogConfig struct {
 	Dir      string `yaml:"dir"`      // 日志目录，空则不写文件
 	Filename string `yaml:"filename"` // 日志文件名（不含扩展名），空则取程序名
 	MaxAge   int    `yaml:"max_age"`  // 日志保留天数，<=0 不清理
+	Caller   bool   `yaml:"caller"`   // 是否输出调用文件和行号
 }
 
 // defaultConfig 默认配置
@@ -159,5 +160,8 @@ func overrideFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("APP_LOG_MAX_AGE"); v != "" {
 		fmt.Sscanf(v, "%d", &cfg.Log.MaxAge)
+	}
+	if v := os.Getenv("APP_LOG_CALLER"); v == "false" {
+		cfg.Log.Caller = false
 	}
 }

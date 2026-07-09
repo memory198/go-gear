@@ -20,6 +20,7 @@ type Config struct {
 	FileDir  string // 文件输出目录，空则不写文件
 	Filename string // 文件名（不含扩展名），空则取程序名
 	MaxAge   int    // 日志保留天数，<=0 不清理
+	Caller   bool   // 是否输出调用文件和行号，默认 true
 }
 
 // Logger 日志实例
@@ -51,7 +52,7 @@ func New(cfg Config) (*Logger, error) {
 }
 
 // NewFromConfig 从配置参数创建
-func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge int) (*Logger, error) {
+func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge int, caller bool) (*Logger, error) {
 	return New(Config{
 		Level:    parseLevel(level),
 		Format:   parseFormat(format),
@@ -59,6 +60,7 @@ func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge
 		FileDir:  fileDir,
 		Filename: filename,
 		MaxAge:   maxAge,
+		Caller:   caller,
 	})
 }
 
@@ -109,10 +111,13 @@ func (l *Logger) log(ctx context.Context, level Level, msg string) {
 	now := time.Now()
 	ti := traceFromCtx(ctx)
 
-	caller := findCaller()
+	var caller string
+	if l.cfg.Caller {
+		caller = findCaller()
+	}
 
 	e := &entry{
-		Time:          now.Format("2006-01-02 15:04:05.000"),
+		Time:          now.Format("2006-01-02 15:04:05.000000"),
 		Level:         levelNames[level],
 		Msg:           msg,
 		Caller:        caller,
@@ -149,7 +154,7 @@ func (l *Logger) Close() error {
 }
 
 // findCaller 向上遍历调用栈，找到第一个不属于 logger 包和运行时的帧
-// 返回 "文件名:行号"，不受编译器内联影响
+// 返回 "相对路径:行号"，不受编译器内联影响
 func findCaller() string {
 	const maxDepth = 15
 	pcs := make([]uintptr, maxDepth)
@@ -170,7 +175,30 @@ func findCaller() string {
 			}
 			continue
 		}
-		return fmt.Sprintf("%s:%d", filepath.Base(f.File), f.Line)
+		return fmt.Sprintf("%s:%d", relativeFile(f.File), f.Line)
 	}
 	return "???"
+}
+
+// relativeFile 将绝对路径转为相对于当前工作目录的路径
+// 不在工作目录下时，保留最后两级路径作为兜底
+func relativeFile(absPath string) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return shortFile(absPath)
+	}
+	rel, err := filepath.Rel(cwd, absPath)
+	if err != nil {
+		return shortFile(absPath)
+	}
+	return rel
+}
+
+// shortFile 只保留最后两段路径，如 service/user/user.go
+func shortFile(path string) string {
+	parts := strings.Split(path, "/")
+	if len(parts) <= 2 {
+		return path
+	}
+	return strings.Join(parts[len(parts)-2:], "/")
 }

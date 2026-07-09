@@ -13,6 +13,7 @@ func init() {
 		Level:   DEBUG,
 		Format:  TextFormat,
 		Console: true,
+		Caller:  true,
 	})
 	defaultLogger.Store(l)
 }

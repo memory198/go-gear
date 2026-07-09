@@ -15,13 +15,17 @@ type encoder interface {
 type textEncoder struct{}
 
 func (textEncoder) encode(e *entry) string {
+	var callerPart string
+	if e.Caller != "" {
+		callerPart = e.Caller + " "
+	}
 	if e.RootTraceID != "" {
-		return fmt.Sprintf("%s [%s] [%s] %s %s\n",
-			e.Time, e.Level, e.RootTraceID, e.Caller, e.Msg,
+		return fmt.Sprintf("%s [%s] [%s] %s%s\n",
+			e.Time, e.Level, e.RootTraceID, callerPart, e.Msg,
 		)
 	}
-	return fmt.Sprintf("%s [%s] %s %s\n",
-		e.Time, e.Level, e.Caller, e.Msg,
+	return fmt.Sprintf("%s [%s] %s%s\n",
+		e.Time, e.Level, callerPart, e.Msg,
 	)
 }
 

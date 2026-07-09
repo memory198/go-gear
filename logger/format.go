@@ -23,7 +23,7 @@ type entry struct {
 	Time          string   `json:"time"`
 	Level         string   `json:"level"`
 	Msg           string   `json:"msg"`
-	Caller        string   `json:"caller"`
+	Caller        string   `json:"caller,omitempty"`
 	RootTraceID   string   `json:"root_trace_id,omitempty"`
 	MiddleSpanIDs []string `json:"middle_span_ids,omitempty"`
 	CurrentSpanID string   `json:"current_span_id,omitempty"`

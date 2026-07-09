@@ -72,7 +72,7 @@ func TestNew_JSONFormat(t *testing.T) {
 
 func TestNewFromConfig_FieldMapping(t *testing.T) {
 	dir := t.TempDir()
-	l, err := NewFromConfig("warn", "json", dir, "svc", true, 30)
+	l, err := NewFromConfig("warn", "json", dir, "svc", true, 30, true)
 	if err != nil {
 		t.Fatalf("NewFromConfig() failed: %v", err)
 	}
@@ -95,6 +95,9 @@ func TestNewFromConfig_FieldMapping(t *testing.T) {
 	}
 	if l.cfg.MaxAge != 30 {
 		t.Errorf("MaxAge = %d, want 30", l.cfg.MaxAge)
+	}
+	if !l.cfg.Caller {
+		t.Errorf("Caller = false, want true")
 	}
 }
 
@@ -229,7 +232,7 @@ func TestDefaultLogger(t *testing.T) {
 	}
 	SetDefault(custom)
 
-	Info(context.Background(), "from default")
+	Debug(context.Background(), "from default")
 	if !strings.Contains(buf.String(), "from default") {
 		t.Errorf("default logger not replaced, got %q", buf.String())
 	}

@@ -14,7 +14,7 @@ import (
 func newTestLogger(level Level) (*Logger, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
 	return &Logger{
-		cfg:     Config{Level: level},
+		cfg:     Config{Level: level, Caller: true},
 		enc:     textEncoder{},
 		writers: []io.Writer{buf},
 	}, buf
@@ -51,7 +51,7 @@ func TestLogFormat_NoTraceIDs(t *testing.T) {
 	l.Info(context.Background(), "hello world")
 
 	out := buf.String()
-	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \[INFO\] .+:\d+ hello world\n$`)
+	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} \[INFO\] .+:\d+ hello world\n$`)
 	if !re.MatchString(out) {
 		t.Errorf("output format mismatch: %q", out)
 	}
@@ -63,8 +63,8 @@ func TestLogFormat_WithRootTraceID(t *testing.T) {
 	l.Info(ctx, "hello")
 
 	out := buf.String()
-	// text 格式仅展示 root_trace_id
-	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \[INFO\] \[root-1\] .+:\d+ hello\n$`)
+	// text 格式仅展示 root_trace_id，caller 用中括号包裹
+	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} \[INFO\] \[root-1\] .+:\d+ hello\n$`)
 	if !re.MatchString(out) {
 		t.Errorf("output format mismatch: %q", out)
 	}
@@ -73,7 +73,7 @@ func TestLogFormat_WithRootTraceID(t *testing.T) {
 func TestLogJSONFormat_AllTraceFields(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat},
+		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: true},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -106,7 +106,7 @@ func TestLogJSONFormat_AllTraceFields(t *testing.T) {
 func TestLogJSONFormat_NoTraceFields(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat},
+		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: true},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -158,6 +158,21 @@ func TestConcurrentWrites(t *testing.T) {
 	lines := strings.Count(buf.String(), "\n")
 	if lines != n {
 		t.Errorf("expected %d log lines, got %d (mutex should prevent interleaving)", n, lines)
+	}
+}
+
+func TestNoCaller(t *testing.T) {
+	buf := &bytes.Buffer{}
+	l := &Logger{
+		cfg:     Config{Level: DEBUG, Caller: false},
+		enc:     textEncoder{},
+		writers: []io.Writer{buf},
+	}
+	l.Info(context.Background(), "no caller")
+	out := buf.String()
+	// Caller=false 时输出中不应出现 .go:行号
+	if strings.Contains(out, ".go:") {
+		t.Errorf("expected no file:line when Caller=false, got %q", out)
 	}
 }
 
