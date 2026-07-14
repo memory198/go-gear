@@ -4,6 +4,8 @@ package gctx
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"time"
@@ -34,7 +36,7 @@ type Context struct {
 func NewContext(r *http.Request, w http.ResponseWriter) *Context {
 	traceID := r.Header.Get("X-Trace-ID")
 	if traceID == "" {
-		traceID = generateID()
+		traceID = generateTraceID()
 	}
 
 	ctx, cancel := context.WithCancel(r.Context())
@@ -44,7 +46,7 @@ func NewContext(r *http.Request, w http.ResponseWriter) *Context {
 		req:     r,
 		rw:      w,
 		traceID: traceID,
-		spanID:  generateID(),
+		spanID:  generateSpanID(),
 		values:  make(map[string]any),
 		cancel:  cancel,
 	}
@@ -88,7 +90,7 @@ func (c *Context) MiddleSpanIDs() []string {
 // StartSpan 创建新的 span 上下文
 // 将当前 spanID 推入中间链，新 spanID 作为当前
 func (c *Context) StartSpan() *Context {
-	newSpanID := generateID()
+	newSpanID := generateSpanID()
 
 	return &Context{
 		Context:      c.Context,
@@ -212,18 +214,21 @@ func (c *Context) SetTraceHeaders() {
 	c.SetParentSpanIDHeader()
 }
 
-// generateID 生成简单的随机 ID
-func generateID() string {
-	return time.Now().Format("20060102150405") + "-" + randomString(8)
+// generateTraceID 生成 OTel 兼容的 32 位 hex TraceID（128-bit）
+func generateTraceID() string {
+	return hex.EncodeToString(randBytes(16))
 }
 
-// randomString 生成随机字符串
-func randomString(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+// generateSpanID 生成 OTel 兼容的 16 位 hex SpanID（64-bit）
+func generateSpanID() string {
+	return hex.EncodeToString(randBytes(8))
+}
+
+// randBytes 生成 n 字节的加密级随机数据
+func randBytes(n int) []byte {
 	b := make([]byte, n)
-	for i := range b {
-		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
-		time.Sleep(time.Nanosecond)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("gctx: crypto/rand failed: %v", err))
 	}
-	return string(b)
+	return b
 }
