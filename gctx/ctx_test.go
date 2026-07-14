@@ -42,6 +42,53 @@ func TestContextTraceID(t *testing.T) {
 	}
 }
 
+func TestContextTraceparentHeader(t *testing.T) {
+	// W3C traceparent: version-trace_id-parent_id-flags
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	w := httptest.NewRecorder()
+	ctx := NewContext(req, w)
+
+	// traceID 继承自 traceparent
+	if ctx.TraceID() != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Errorf("TraceID() = %s, want traceparent traceID", ctx.TraceID())
+	}
+	// parentSpanID 继承自 traceparent 的 span-id 字段
+	if ctx.ParentSpanID() != "00f067aa0ba902b7" {
+		t.Errorf("ParentSpanID() = %s, want traceparent spanID", ctx.ParentSpanID())
+	}
+	// spanID 总是新生成的
+	if ctx.SpanID() == "" {
+		t.Error("SpanID() should not be empty")
+	}
+	if ctx.SpanID() == "00f067aa0ba902b7" {
+		t.Error("SpanID() should be newly generated, not inherit from traceparent")
+	}
+
+	// 格式错误时回退到自动生成
+	req2 := httptest.NewRequest("GET", "/test", nil)
+	req2.Header.Set("traceparent", "invalid-format")
+	w2 := httptest.NewRecorder()
+	ctx2 := NewContext(req2, w2)
+	if ctx2.TraceID() == "invalid-format" {
+		t.Error("TraceID() should not use invalid traceparent")
+	}
+	if ctx2.ParentSpanID() != "" {
+		t.Error("ParentSpanID() should be empty for invalid traceparent")
+	}
+}
+
+func TestContextXSpanIDHeader(t *testing.T) {
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("X-Span-ID", "upstream-span-123")
+	w := httptest.NewRecorder()
+	ctx := NewContext(req, w)
+
+	if ctx.ParentSpanID() != "upstream-span-123" {
+		t.Errorf("ParentSpanID() = %s, want upstream-span-123", ctx.ParentSpanID())
+	}
+}
+
 func TestContextSpanID(t *testing.T) {
 	req := httptest.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()

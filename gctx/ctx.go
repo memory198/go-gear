@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/memory198/go-gear/logger"
@@ -33,8 +34,9 @@ type Context struct {
 }
 
 // NewContext 创建新的请求上下文（根节点）
+// 优先从 W3C traceparent 头提取 traceID 和 parentSpanID，X-Trace-ID/X-Span-ID 为兜底
 func NewContext(r *http.Request, w http.ResponseWriter) *Context {
-	traceID := r.Header.Get("X-Trace-ID")
+	traceID, parentSpanID := extractTraceFromHeader(r)
 	if traceID == "" {
 		traceID = generateTraceID()
 	}
@@ -42,14 +44,30 @@ func NewContext(r *http.Request, w http.ResponseWriter) *Context {
 	ctx, cancel := context.WithCancel(r.Context())
 
 	return &Context{
-		Context: ctx,
-		req:     r,
-		rw:      w,
-		traceID: traceID,
-		spanID:  generateSpanID(),
-		values:  make(map[string]any),
-		cancel:  cancel,
+		Context:      ctx,
+		req:          r,
+		rw:           w,
+		traceID:      traceID,
+		spanID:       generateSpanID(),
+		parentSpanID: parentSpanID,
+		values:       make(map[string]any),
+		cancel:       cancel,
 	}
+}
+
+// extractTraceFromHeader 从请求头提取链路信息
+// 优先 W3C traceparent: version-trace_id-parent_id-flags
+// 兜底 X-Trace-ID / X-Span-ID
+func extractTraceFromHeader(r *http.Request) (traceID, parentSpanID string) {
+	if tp := r.Header.Get("traceparent"); tp != "" {
+		parts := strings.Split(tp, "-")
+		if len(parts) == 4 && len(parts[1]) == 32 && len(parts[2]) == 16 {
+			return parts[1], parts[2]
+		}
+	}
+	traceID = r.Header.Get("X-Trace-ID")
+	parentSpanID = r.Header.Get("X-Span-ID")
+	return
 }
 
 // Request 获取原始 HTTP 请求
