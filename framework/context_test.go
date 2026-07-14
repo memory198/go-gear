@@ -68,28 +68,50 @@ func TestContextWithTimeout(t *testing.T) {
 	}
 }
 
-func TestContextWithValue(t *testing.T) {
+func TestContextSet(t *testing.T) {
 	req := httptest.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
 	ctx := NewContext(req, w)
 
-	// 测试 WithValue
-	newCtx := ctx.WithValue("key", "value")
-	if newCtx.Value("key") != "value" {
-		t.Errorf("Value('key') = %v, want 'value'", newCtx.Value("key"))
+	// Set 在当前上下文存储值
+	ctx.Set("key", "value")
+	if ctx.Value("key") != "value" {
+		t.Errorf("Value('key') = %v, want 'value'", ctx.Value("key"))
 	}
 
-	// 确保原始上下文不受影响
-	if ctx.Value("key") != nil {
-		t.Error("Original context should not have the new value")
+	// 重复 key 应 panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Set duplicate key should panic")
+		}
+	}()
+	ctx.Set("key", "value2")
+}
+
+func TestContextSetAcrossDerived(t *testing.T) {
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	ctx := NewContext(req, w)
+
+	ctx.Set("key", "parent")
+
+	// 派生上下文可覆盖同 key
+	child := ctx.StartSpan()
+	child.Set("key", "child")
+	if child.Value("key") != "child" {
+		t.Errorf("child value = %v, want 'child'", child.Value("key"))
 	}
 
-	// 测试继承属性
-	if newCtx.TraceID() != ctx.TraceID() {
-		t.Error("New context should inherit trace ID")
+	// 父上下文不受影响
+	if ctx.Value("key") != "parent" {
+		t.Errorf("parent value = %v, want 'parent'", ctx.Value("key"))
 	}
-	if newCtx.Request() != req {
-		t.Error("New context should inherit request")
+
+	if child.TraceID() != ctx.TraceID() {
+		t.Error("Child should inherit trace ID")
+	}
+	if child.Request() != req {
+		t.Error("Child should inherit request")
 	}
 }
 
@@ -104,23 +126,23 @@ func TestContextSetTraceIDHeader(t *testing.T) {
 	}
 }
 
-func TestContextWithValueChain(t *testing.T) {
+func TestContextSetChain(t *testing.T) {
 	req := httptest.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
 	ctx := NewContext(req, w)
 
-	// 测试链式调用
-	ctx2 := ctx.WithValue("key1", "value1")
-	ctx3 := ctx2.WithValue("key2", "value2")
+	child := ctx.StartSpan()
+	child.Set("key1", "value1")
+	child.Set("key2", "value2")
 
-	if ctx3.Value("key1") != "value1" {
-		t.Errorf("Value('key1') = %v, want 'value1'", ctx3.Value("key1"))
+	if child.Value("key1") != "value1" {
+		t.Errorf("Value('key1') = %v, want 'value1'", child.Value("key1"))
 	}
-	if ctx3.Value("key2") != "value2" {
-		t.Errorf("Value('key2') = %v, want 'value2'", ctx3.Value("key2"))
+	if child.Value("key2") != "value2" {
+		t.Errorf("Value('key2') = %v, want 'value2'", child.Value("key2"))
 	}
 
-	// 确保原始上下文不受影响
+	// 父上下文不受影响
 	if ctx.Value("key1") != nil {
 		t.Error("Original context should not have key1")
 	}

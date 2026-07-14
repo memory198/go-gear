@@ -8,7 +8,6 @@ func TestParseLevel(t *testing.T) {
 		in   string
 		want Level
 	}{
-		{"trace lowercase", "trace", TRACE},
 		{"debug lowercase", "debug", DEBUG},
 		{"debug uppercase", "DEBUG", DEBUG},
 		{"debug mixed case", "Debug", DEBUG},

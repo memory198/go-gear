@@ -27,12 +27,11 @@ func TestLevelFiltering(t *testing.T) {
 		call       func(l *Logger, ctx context.Context)
 		wantOutput bool
 	}{
-		{"trace filtered at info level", INFO, func(l *Logger, ctx context.Context) { l.Trace(ctx, "x") }, false},
 		{"debug filtered at info level", INFO, func(l *Logger, ctx context.Context) { l.Debug(ctx, "x") }, false},
 		{"info passes at info level", INFO, func(l *Logger, ctx context.Context) { l.Info(ctx, "x") }, true},
 		{"warn filtered at error level", ERROR, func(l *Logger, ctx context.Context) { l.Warn(ctx, "x") }, false},
 		{"error passes at error level", ERROR, func(l *Logger, ctx context.Context) { l.Error(ctx, "x") }, true},
-		{"trace passes at trace level", TRACE, func(l *Logger, ctx context.Context) { l.Trace(ctx, "x") }, true},
+		{"debug passes at debug level", DEBUG, func(l *Logger, ctx context.Context) { l.Debug(ctx, "x") }, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,7 +123,6 @@ func TestFormattedMethods(t *testing.T) {
 		call func(l *Logger, ctx context.Context)
 		want string
 	}{
-		{"Tracef", func(l *Logger, ctx context.Context) { l.Tracef(ctx, "trace %d", 1) }, "trace 1"},
 		{"Debugf", func(l *Logger, ctx context.Context) { l.Debugf(ctx, "user %s id=%d", "alice", 1) }, "user alice id=1"},
 		{"Infof", func(l *Logger, ctx context.Context) { l.Infof(ctx, "n=%d", 5) }, "n=5"},
 		{"Warnf", func(l *Logger, ctx context.Context) { l.Warnf(ctx, "warn %s", "x") }, "warn x"},
@@ -132,7 +130,7 @@ func TestFormattedMethods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l, buf := newTestLogger(TRACE)
+			l, buf := newTestLogger(DEBUG)
 			tt.call(l, context.Background())
 			if !strings.Contains(buf.String(), tt.want) {
 				t.Errorf("output = %q, want contains %q", buf.String(), tt.want)

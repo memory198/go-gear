@@ -6,8 +6,7 @@ import "strings"
 type Level int
 
 const (
-	TRACE Level = iota
-	DEBUG
+	DEBUG Level = iota
 	INFO
 	WARN
 	ERROR
@@ -15,7 +14,6 @@ const (
 )
 
 var levelNames = map[Level]string{
-	TRACE: "TRACE",
 	DEBUG: "DEBUG",
 	INFO:  "INFO",
 	WARN:  "WARN",
@@ -25,8 +23,6 @@ var levelNames = map[Level]string{
 
 func parseLevel(s string) Level {
 	switch strings.ToLower(s) {
-	case "trace":
-		return TRACE
 	case "debug":
 		return DEBUG
 	case "warn":

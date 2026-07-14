@@ -66,7 +66,6 @@ func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge
 
 // ---- 实例方法：不带格式化 ----
 
-func (l *Logger) Trace(ctx context.Context, msg string) { l.log(ctx, TRACE, msg) }
 func (l *Logger) Debug(ctx context.Context, msg string)  { l.log(ctx, DEBUG, msg) }
 func (l *Logger) Info(ctx context.Context, msg string)   { l.log(ctx, INFO, msg) }
 func (l *Logger) Warn(ctx context.Context, msg string)   { l.log(ctx, WARN, msg) }
@@ -80,9 +79,6 @@ func (l *Logger) Fatal(ctx context.Context, msg string) {
 
 // ---- 实例方法：带格式化 ----
 
-func (l *Logger) Tracef(ctx context.Context, format string, args ...any) {
-	l.log(ctx, TRACE, fmt.Sprintf(format, args...))
-}
 func (l *Logger) Debugf(ctx context.Context, format string, args ...any) {
 	l.log(ctx, DEBUG, fmt.Sprintf(format, args...))
 }

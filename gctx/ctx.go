@@ -4,35 +4,39 @@ package gctx
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/memory198/go-gear/logger"
 )
 
 // Context 自定义请求上下文
 // 提供标准库没有的功能：请求跟踪、span管理、超时控制、map存储值
 type Context struct {
-	context.Context                     // 嵌入标准上下文接口
-	req             *http.Request       // 原始 HTTP 请求
-	rw              http.ResponseWriter // HTTP 响应写入器
-	traceID         string              // 请求追踪ID
-	spanID          string              // 当前span ID
-	parentSpanID    string              // 父span ID
-	values          map[string]any      // 自定义值存储
-	cancel          context.CancelFunc  // 取消函数
+	context.Context // 嵌入标准上下文（仅用于超时/取消，不用于 WithValue）
+
+	parent *Context // 父上下文，用于 Value 回溯；nil 表示根
+
+	req *http.Request
+	rw  http.ResponseWriter
+
+	traceID       string   // 请求追踪 ID
+	spanID        string   // 当前 span ID
+	parentSpanID  string   // 父 span ID
+	middleSpanIDs []string // 中间 span ID 链（不含 current）
+
+	values map[string]any // 自定义值存储，Set 时检查本层重复
+	cancel context.CancelFunc
 }
 
-// NewContext 创建新的请求上下文
-// 基于请求的上下文创建自定义上下文，自动生成trace ID
-// 初始上下文不包含span ID，需要通过StartSpan()创建span
-// 创建的上下文是可取消的，可以通过Cancel()方法取消
+// NewContext 创建新的请求上下文（根节点）
 func NewContext(r *http.Request, w http.ResponseWriter) *Context {
-	// 从请求头获取trace ID，如果没有则生成
 	traceID := r.Header.Get("X-Trace-ID")
 	if traceID == "" {
 		traceID = generateID()
 	}
 
-	// 创建可取消的上下文
 	ctx, cancel := context.WithCancel(r.Context())
 
 	return &Context{
@@ -40,18 +44,16 @@ func NewContext(r *http.Request, w http.ResponseWriter) *Context {
 		req:     r,
 		rw:      w,
 		traceID: traceID,
+		spanID:  generateID(),
 		values:  make(map[string]any),
 		cancel:  cancel,
 	}
 }
 
 // Request 获取原始 HTTP 请求
-func (c *Context) Request() *http.Request {
-	return c.req
-}
+func (c *Context) Request() *http.Request { return c.req }
 
-// Cancel 取消上下文
-// 调用此方法会取消当前上下文及其所有子上下文
+// Cancel 取消上下文及其所有子上下文
 func (c *Context) Cancel() {
 	if c.cancel != nil {
 		c.cancel()
@@ -59,70 +61,76 @@ func (c *Context) Cancel() {
 }
 
 // ResponseWriter 获取 HTTP 响应写入器
-func (c *Context) ResponseWriter() http.ResponseWriter {
-	return c.rw
+func (c *Context) ResponseWriter() http.ResponseWriter { return c.rw }
+
+// TraceID 获取请求追踪 ID
+func (c *Context) TraceID() string { return c.traceID }
+
+// SpanID 获取当前 span ID
+func (c *Context) SpanID() string { return c.spanID }
+
+// ParentSpanID 获取父 span ID
+func (c *Context) ParentSpanID() string { return c.parentSpanID }
+
+// MiddleSpanIDs 获取中间 span ID 链
+func (c *Context) MiddleSpanIDs() []string {
+	// 从父链聚合所有中间 span
+	var ids []string
+	if c.parent != nil {
+		ids = append(ids, c.parent.MiddleSpanIDs()...)
+		if c.parent.spanID != "" {
+			ids = append(ids, c.parent.spanID)
+		}
+	}
+	return ids
 }
 
-// TraceID 获取请求追踪ID
-func (c *Context) TraceID() string {
-	return c.traceID
-}
-
-// SpanID 获取当前span ID
-func (c *Context) SpanID() string {
-	return c.spanID
-}
-
-// ParentSpanID 获取父span ID
-func (c *Context) ParentSpanID() string {
-	return c.parentSpanID
-}
-
-// StartSpan 创建新的span上下文
-// 生成新的span ID，将当前span ID设置为父span ID
+// StartSpan 创建新的 span 上下文
+// 将当前 spanID 推入中间链，新 spanID 作为当前
 func (c *Context) StartSpan() *Context {
 	newSpanID := generateID()
+
 	return &Context{
 		Context:      c.Context,
+		parent:       c,
 		req:          c.req,
 		rw:           c.rw,
 		traceID:      c.traceID,
 		spanID:       newSpanID,
 		parentSpanID: c.spanID,
-		values:       c.copyValues(),
+		values:       make(map[string]any), // 新层，不继承父层 values
 	}
 }
 
 // WithTimeout 创建带超时的子上下文
 func (c *Context) WithTimeout(timeout time.Duration) (*Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(c.Context, timeout)
-	newCtx := &Context{
+	return &Context{
 		Context:      ctx,
+		parent:       c,
 		req:          c.req,
 		rw:           c.rw,
 		traceID:      c.traceID,
 		spanID:       c.spanID,
 		parentSpanID: c.parentSpanID,
-		values:       c.copyValues(),
-	}
-	return newCtx, cancel
+		values:       make(map[string]any),
+	}, cancel
 }
 
-// WithTimeoutFunc 创建带超时的子上下文，并在超时时调用回调函数
-// 回调函数在新的goroutine中执行，用于清理操作
+// WithTimeoutFunc 创建带超时的子上下文，超时时调用回调
 func (c *Context) WithTimeoutFunc(timeout time.Duration, callback func()) (*Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(c.Context, timeout)
 	newCtx := &Context{
 		Context:      ctx,
+		parent:       c,
 		req:          c.req,
 		rw:           c.rw,
 		traceID:      c.traceID,
 		spanID:       c.spanID,
 		parentSpanID: c.parentSpanID,
-		values:       c.copyValues(),
+		values:       make(map[string]any),
 	}
 
-	// 启动goroutine监听超时
 	go func() {
 		<-ctx.Done()
 		if ctx.Err() == context.DeadlineExceeded && callback != nil {
@@ -136,60 +144,61 @@ func (c *Context) WithTimeoutFunc(timeout time.Duration, callback func()) (*Cont
 // WithDeadline 创建带截止时间的子上下文
 func (c *Context) WithDeadline(deadline time.Time) (*Context, context.CancelFunc) {
 	ctx, cancel := context.WithDeadline(c.Context, deadline)
-	newCtx := &Context{
+	return &Context{
 		Context:      ctx,
+		parent:       c,
 		req:          c.req,
 		rw:           c.rw,
 		traceID:      c.traceID,
 		spanID:       c.spanID,
 		parentSpanID: c.parentSpanID,
-		values:       c.copyValues(),
-	}
-	return newCtx, cancel
+		values:       make(map[string]any),
+	}, cancel
 }
 
-// WithValue 创建新的上下文，并添加键值对
-// 基于当前上下文创建新的上下文，复制现有值并添加新值
-func (c *Context) WithValue(key, value any) *Context {
-	newValues := c.copyValues()
-	if strKey, ok := key.(string); ok {
-		newValues[strKey] = value
+// Set 在当前上下文存储值，key 已存在时 panic
+// 派生上下文（StartSpan/WithTimeout 等）不会继承父层 values，可自由覆盖
+func (c *Context) Set(key string, value any) {
+	if _, exists := c.values[key]; exists {
+		panic(fmt.Sprintf("gctx: duplicate key %q", key))
 	}
-	return &Context{
-		Context:      c.Context,
-		req:          c.req,
-		rw:           c.rw,
-		traceID:      c.traceID,
-		spanID:       c.spanID,
-		parentSpanID: c.parentSpanID,
-		values:       newValues,
-	}
+	c.values[key] = value
 }
 
 // Value 获取值
-// 首先从自定义值存储中获取，然后从标准上下文中获取
+// 优先检查 logger 的链路追踪 key，再查本层 values，最后沿 parent 链向上回溯
 func (c *Context) Value(key any) any {
-	// 首先从自定义值存储中获取
+	switch key {
+	case logger.RootTraceIDKey:
+		return c.traceID
+	case logger.CurrentSpanIDKey:
+		return c.spanID
+	case logger.MiddleSpanIDsKey:
+		return c.MiddleSpanIDs()
+	}
+
 	if strKey, ok := key.(string); ok {
 		if val, exists := c.values[strKey]; exists {
 			return val
 		}
+		if c.parent != nil {
+			return c.parent.Value(key)
+		}
 	}
-	// 然后从标准上下文中获取
 	return c.Context.Value(key)
 }
 
-// SetTraceIDHeader 设置追踪ID响应头
+// SetTraceIDHeader 设置追踪 ID 响应头
 func (c *Context) SetTraceIDHeader() {
 	c.rw.Header().Set("X-Trace-ID", c.traceID)
 }
 
-// SetSpanIDHeader 设置span ID响应头
+// SetSpanIDHeader 设置 span ID 响应头
 func (c *Context) SetSpanIDHeader() {
 	c.rw.Header().Set("X-Span-ID", c.spanID)
 }
 
-// SetParentSpanIDHeader 设置父span ID响应头
+// SetParentSpanIDHeader 设置父 span ID 响应头
 func (c *Context) SetParentSpanIDHeader() {
 	if c.parentSpanID != "" {
 		c.rw.Header().Set("X-Parent-Span-ID", c.parentSpanID)
@@ -203,16 +212,7 @@ func (c *Context) SetTraceHeaders() {
 	c.SetParentSpanIDHeader()
 }
 
-// copyValues 复制值映射
-func (c *Context) copyValues() map[string]any {
-	newValues := make(map[string]any, len(c.values))
-	for k, v := range c.values {
-		newValues[k] = v
-	}
-	return newValues
-}
-
-// generateID 生成简单的随机ID
+// generateID 生成简单的随机 ID
 func generateID() string {
 	return time.Now().Format("20060102150405") + "-" + randomString(8)
 }
