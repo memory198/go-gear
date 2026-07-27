@@ -44,18 +44,28 @@ func (w *Watcher) Get(path string) Value {
 	return newValue(raw, ok)
 }
 
-// Watch 订阅指定路径，值变化时推送新 Value 到 channel
+// watchEvent 内部事件结构，同时携带原始值和路径是否存在的标志，
+// 避免 key 被删除时 ok 信息丢失。
+type watchEvent struct {
+	raw any
+	ok  bool
+}
+
+// Watch 订阅指定路径，值变化时推送新 Value 到 channel。
+// 当路径对应的 key 被删除时，推送 Exists()=false 的 Value。
 func (w *Watcher) Watch(path string) <-chan Value {
 	ch := make(chan Value, 1)
 	w.mu.Lock()
-	// 复用内部 any channel，外部包装成 Value channel
+	// 内部使用 watchEvent channel，携带完整的 raw+ok 信息
 	inner := make(chan any, 1)
 	w.subs[path] = append(w.subs[path], inner)
 	w.mu.Unlock()
 
 	go func() {
-		for raw := range inner {
-			ch <- newValue(raw, true)
+		for e := range inner {
+			if evt, ok := e.(watchEvent); ok {
+				ch <- newValue(evt.raw, evt.ok)
+			}
 		}
 	}()
 	return ch
@@ -153,15 +163,17 @@ func (w *Watcher) reloadAndNotify() {
 		oldVal, oldOk := getByPath(oldRaw, keys)
 
 		if newOk != oldOk || fmt.Sprint(newVal) != fmt.Sprint(oldVal) {
+			evt := watchEvent{raw: newVal, ok: newOk}
 			for _, ch := range channels {
 				select {
-				case ch <- newVal:
+				case ch <- evt:
 				default:
+					// channel 已满时先排空旧值再写入，保证订阅者总能拿到最新值
 					select {
 					case <-ch:
 					default:
 					}
-					ch <- newVal
+					ch <- evt
 				}
 			}
 		}
