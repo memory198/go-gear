@@ -40,6 +40,16 @@ func traceFromCtx(ctx context.Context) traceInfo {
 	}
 }
 
+// WithRootTraceID 将根链路追踪 ID 写入 context
+func WithRootTraceID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, RootTraceIDKey, id)
+}
+
+// WithCurrentSpanID 将当前 span ID 写入 context
+func WithCurrentSpanID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, CurrentSpanIDKey, id)
+}
+
 func stringFromCtx(ctx context.Context, key any) string {
 	v, _ := ctx.Value(key).(string)
 	return v
