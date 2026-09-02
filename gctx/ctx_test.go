@@ -2,6 +2,7 @@ package gctx
 
 import (
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -75,6 +76,33 @@ func TestContextTraceparentHeader(t *testing.T) {
 	}
 	if ctx2.ParentSpanID() != "" {
 		t.Error("ParentSpanID() should be empty for invalid traceparent")
+	}
+}
+
+func TestContextNonHexTraceparentHeader(t *testing.T) {
+	// 长度合法但内容非 hex（如全 X）→ 应忽略并回退自动生成
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("traceparent", "00-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX-YYYYYYYYYYYYYYYY-01")
+	w := httptest.NewRecorder()
+	ctx := NewContext(req, w)
+
+	if ctx.TraceID() == strings.Repeat("X", 32) {
+		t.Error("TraceID() should not use non-hex traceparent")
+	}
+	if !isValidHex(ctx.TraceID(), 32) {
+		t.Errorf("TraceID() = %s, want a valid 32-hex generated ID", ctx.TraceID())
+	}
+	if ctx.ParentSpanID() != "" {
+		t.Errorf("ParentSpanID() = %s, want empty for non-hex traceparent", ctx.ParentSpanID())
+	}
+
+	// 部分段非法也不采用：traceID 合法但 parentID 非 hex
+	req2 := httptest.NewRequest("GET", "/test", nil)
+	req2.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-YYYYYYYYYYYYYYYY-01")
+	w2 := httptest.NewRecorder()
+	ctx2 := NewContext(req2, w2)
+	if ctx2.TraceID() == "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Error("TraceID() should not adopt traceparent when parentID is non-hex")
 	}
 }
 

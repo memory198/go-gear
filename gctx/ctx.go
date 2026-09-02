@@ -59,15 +59,27 @@ func NewContext(r *http.Request, w http.ResponseWriter) *Context {
 // 优先 W3C traceparent: version-trace_id-parent_id-flags
 // 兜底 X-Trace-ID / X-Span-ID
 func extractTraceFromHeader(r *http.Request) (traceID, parentSpanID string) {
-	if tp := r.Header.Get("traceparent"); tp != "" {
-		parts := strings.Split(tp, "-")
-		if len(parts) == 4 && len(parts[1]) == 32 && len(parts[2]) == 16 {
+	// 优先 W3C traceparent：version-traceID(32hex)-parentID(16hex)-flags
+	// 严格校验（长度 + hex），非法则忽略，回退到 X-Trace-ID / X-Span-ID
+	if traceparent := r.Header.Get("traceparent"); traceparent != "" {
+		parts := strings.Split(traceparent, "-")
+		if len(parts) == 4 && isValidHex(parts[1], 32) && isValidHex(parts[2], 16) {
 			return parts[1], parts[2]
 		}
 	}
+	// 兜底 X-Trace-ID / X-Span-ID（自定义头，不限制格式，允许非 hex 的业务标识）
 	traceID = r.Header.Get("X-Trace-ID")
 	parentSpanID = r.Header.Get("X-Span-ID")
 	return
+}
+
+// isValidHex 校验 s 长度恰为 n 且全部为十六进制字符（trace/span ID 均为 hex）
+func isValidHex(s string, n int) bool {
+	if len(s) != n {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
 }
 
 // Request 获取原始 HTTP 请求
