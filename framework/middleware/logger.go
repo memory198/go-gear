@@ -2,21 +2,23 @@
 package middleware
 
 import (
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/memory198/go-gear/logger"
 )
 
 // Logger 请求日志中间件
 // 记录每个 HTTP 请求的方法、路径、状态码和处理耗时
 // 输出格式：[METHOD] [PATH] [STATUS] [DURATION]
+// 使用 logger.Printf（无 ctx，INFO 级），输出跟随默认 logger 配置
 // 用法：http.Handle("/", middleware.Logger(nextHandler))
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := &wrappedWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(ww, r)
-		log.Printf("%s %s %d %v", r.Method, r.URL.Path, ww.status, time.Since(start))
+		logger.Printf("%s %s %d %v", r.Method, r.URL.Path, ww.status, time.Since(start))
 	})
 }
 
