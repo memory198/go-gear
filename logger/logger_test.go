@@ -139,6 +139,64 @@ func TestFormattedMethods(t *testing.T) {
 	}
 }
 
+func TestTextFormatWithFields(t *testing.T) {
+	l, buf := newTestLogger(DEBUG)
+	l.Info(context.Background(), "user created", "user_id", 123, "source", "api")
+
+	out := buf.String()
+	if !strings.Contains(out, "user created user_id=123 source=api") {
+		t.Errorf("text format should append k=v fields: %q", out)
+	}
+}
+
+func TestJSONFormatWithFields(t *testing.T) {
+	buf := &bytes.Buffer{}
+	l := &Logger{
+		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: false},
+		enc:     jsonEncoder{},
+		writers: []io.Writer{buf},
+	}
+	l.Info(context.Background(), "user created", "user_id", 123, "source", "api")
+
+	out := buf.String()
+	if !strings.Contains(out, `"user_id":123`) {
+		t.Errorf("JSON should include kv field user_id: %q", out)
+	}
+	if !strings.Contains(out, `"source":"api"`) {
+		t.Errorf("JSON should include kv field source: %q", out)
+	}
+	if !strings.Contains(out, `"msg":"user created"`) {
+		t.Errorf("JSON should keep msg intact: %q", out)
+	}
+}
+
+func TestJSONFormatWithFieldsReservedKeyIgnored(t *testing.T) {
+	// kv key 与内置字段同名（如 level）应被忽略，不破坏结构
+	buf := &bytes.Buffer{}
+	l := &Logger{
+		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: false},
+		enc:     jsonEncoder{},
+		writers: []io.Writer{buf},
+	}
+	l.Info(context.Background(), "msg", "level", "hacked")
+
+	out := buf.String()
+	if strings.Contains(out, `"level":"hacked"`) {
+		t.Errorf("kv should not override reserved field level: %q", out)
+	}
+}
+
+func TestOddArgsBadKey(t *testing.T) {
+	// 奇数个 kv 参数：末尾裸值记为 !BADKEY（slog 约定）
+	l, buf := newTestLogger(DEBUG)
+	l.Info(context.Background(), "odd", "user_id", 123, "orphan")
+
+	out := buf.String()
+	if !strings.Contains(out, "user_id=123 !BADKEY=orphan") {
+		t.Errorf("odd args tail should be !BADKEY: %q", out)
+	}
+}
+
 func TestConcurrentWrites(t *testing.T) {
 	l, buf := newTestLogger(DEBUG)
 	const n = 50

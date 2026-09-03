@@ -66,14 +66,14 @@ func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge
 
 // ---- 实例方法：不带格式化 ----
 
-func (l *Logger) Debug(ctx context.Context, msg string)  { l.log(ctx, DEBUG, msg) }
-func (l *Logger) Info(ctx context.Context, msg string)   { l.log(ctx, INFO, msg) }
-func (l *Logger) Warn(ctx context.Context, msg string)   { l.log(ctx, WARN, msg) }
-func (l *Logger) Error(ctx context.Context, msg string)  { l.log(ctx, ERROR, msg) }
+func (l *Logger) Debug(ctx context.Context, msg string, args ...any)  { l.log(ctx, DEBUG, msg, args...) }
+func (l *Logger) Info(ctx context.Context, msg string, args ...any)   { l.log(ctx, INFO, msg, args...) }
+func (l *Logger) Warn(ctx context.Context, msg string, args ...any)   { l.log(ctx, WARN, msg, args...) }
+func (l *Logger) Error(ctx context.Context, msg string, args ...any)  { l.log(ctx, ERROR, msg, args...) }
 
 // Fatal 输出 FATAL 等级日志后退出程序（调用 os.Exit(1)，defer 不会执行）
-func (l *Logger) Fatal(ctx context.Context, msg string) {
-	l.log(ctx, FATAL, msg)
+func (l *Logger) Fatal(ctx context.Context, msg string, args ...any) {
+	l.log(ctx, FATAL, msg, args...)
 	os.Exit(1)
 }
 
@@ -99,7 +99,7 @@ func (l *Logger) Fatalf(ctx context.Context, format string, args ...any) {
 }
 
 // log 核心写入逻辑
-func (l *Logger) log(ctx context.Context, level Level, msg string) {
+func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) {
 	if level < l.cfg.Level {
 		return
 	}
@@ -120,6 +120,7 @@ func (l *Logger) log(ctx context.Context, level Level, msg string) {
 		RootTraceID:   ti.RootID,
 		MiddleSpanIDs: ti.MiddleIDs,
 		CurrentSpanID: ti.CurrentID,
+		fields:        parseArgs(args),
 	}
 
 	output := l.enc.encode(e)

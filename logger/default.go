@@ -29,11 +29,11 @@ func getDefault() *Logger {
 
 // ---- 包级快捷方法 ----
 
-func Debug(ctx context.Context, msg string)  { getDefault().Debug(ctx, msg) }
-func Info(ctx context.Context, msg string)   { getDefault().Info(ctx, msg) }
-func Warn(ctx context.Context, msg string)   { getDefault().Warn(ctx, msg) }
-func Error(ctx context.Context, msg string)  { getDefault().Error(ctx, msg) }
-func Fatal(ctx context.Context, msg string)  { getDefault().Fatal(ctx, msg) }
+func Debug(ctx context.Context, msg string, args ...any)  { getDefault().Debug(ctx, msg, args...) }
+func Info(ctx context.Context, msg string, args ...any)   { getDefault().Info(ctx, msg, args...) }
+func Warn(ctx context.Context, msg string, args ...any)   { getDefault().Warn(ctx, msg, args...) }
+func Error(ctx context.Context, msg string, args ...any)  { getDefault().Error(ctx, msg, args...) }
+func Fatal(ctx context.Context, msg string, args ...any)  { getDefault().Fatal(ctx, msg, args...) }
 
 func Debugf(ctx context.Context, format string, args ...any) { getDefault().Debugf(ctx, format, args...) }
 func Infof(ctx context.Context, format string, args ...any)  { getDefault().Infof(ctx, format, args...) }

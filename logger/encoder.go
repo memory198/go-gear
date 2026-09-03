@@ -19,13 +19,17 @@ func (textEncoder) encode(e *entry) string {
 	if e.Caller != "" {
 		callerPart = e.Caller + " "
 	}
+	msg := e.Msg
+	for _, f := range e.fields {
+		msg += " " + f.key + "=" + fmt.Sprint(f.value)
+	}
 	if e.RootTraceID != "" {
 		return fmt.Sprintf("%s [%s] [%s] %s%s\n",
-			e.Time, e.Level, e.RootTraceID, callerPart, e.Msg,
+			e.Time, e.Level, e.RootTraceID, callerPart, msg,
 		)
 	}
 	return fmt.Sprintf("%s [%s] %s%s\n",
-		e.Time, e.Level, callerPart, e.Msg,
+		e.Time, e.Level, callerPart, msg,
 	)
 }
 
