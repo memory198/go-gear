@@ -197,6 +197,57 @@ func TestOddArgsBadKey(t *testing.T) {
 	}
 }
 
+func TestPrintNoTrace(t *testing.T) {
+	// Print 为 INFO 级且不携带 trace 字段
+	l, buf := newTestLogger(DEBUG)
+	l.Print("server starting", "port", 8080)
+
+	out := buf.String()
+	if !strings.Contains(out, "[INFO]") {
+		t.Errorf("Print should be INFO level: %q", out)
+	}
+	if strings.Contains(out, "[root-") {
+		t.Errorf("Print should not carry trace fields: %q", out)
+	}
+	if !strings.Contains(out, "server starting port=8080") {
+		t.Errorf("Print should append kv fields: %q", out)
+	}
+}
+
+func TestPrintfFormatting(t *testing.T) {
+	l, buf := newTestLogger(DEBUG)
+	l.Printf("server on %s:%d", "0.0.0.0", 8080)
+
+	out := buf.String()
+	if !strings.Contains(out, "server on 0.0.0.0:8080") {
+		t.Errorf("Printf should format message: %q", out)
+	}
+}
+
+func TestPrintLevelFiltered(t *testing.T) {
+	// Print 是 INFO 级：INFO 级别下应输出，ERROR 级别下应被过滤
+	l, buf := newTestLogger(ERROR)
+	l.Print("should be filtered")
+	if buf.Len() > 0 {
+		t.Errorf("Print(INFO) should be filtered at ERROR level: %q", buf.String())
+	}
+}
+
+func TestPackageLevelPrint(t *testing.T) {
+	buf := &bytes.Buffer{}
+	l := &Logger{cfg: Config{Level: DEBUG}, enc: textEncoder{}, writers: []io.Writer{buf}}
+	old := getDefault()
+	SetDefault(l)
+	defer SetDefault(old)
+
+	Print("pkg print")
+	Printf("pkg printf %d", 1)
+	out := buf.String()
+	if !strings.Contains(out, "pkg print") || !strings.Contains(out, "pkg printf 1") {
+		t.Errorf("package-level Print/Printf should route to default logger: %q", out)
+	}
+}
+
 func TestConcurrentWrites(t *testing.T) {
 	l, buf := newTestLogger(DEBUG)
 	const n = 50

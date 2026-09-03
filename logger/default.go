@@ -41,6 +41,11 @@ func Warnf(ctx context.Context, format string, args ...any)  { getDefault().Warn
 func Errorf(ctx context.Context, format string, args ...any) { getDefault().Errorf(ctx, format, args...) }
 func Fatalf(ctx context.Context, format string, args ...any) { getDefault().Fatalf(ctx, format, args...) }
 
+// ---- 包级无 ctx 打印（log 风格） ----
+
+func Print(msg string, args ...any)   { getDefault().Print(msg, args...) }
+func Printf(format string, args ...any) { getDefault().Printf(format, args...) }
+
 // Close 关闭包级默认日志打印器
 func Close() error {
 	return getDefault().Close()

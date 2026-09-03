@@ -20,7 +20,16 @@ defer logger.Close()
 
 ### 2. 五级日志
 
-DEBUG / INFO / WARN / ERROR / FATAL。FATAL 输出后 `os.Exit(1)`（defer 不会执行，见注释说明）。每级提供 `Xxx(ctx, msg)` 与 `Xxxf(ctx, format, ...)` 两种形式。
+DEBUG / INFO / WARN / ERROR / FATAL。FATAL 输出后 `os.Exit(1)`（defer 不会执行，见注释说明）。每级提供 `Xxx(ctx, msg)`（ctx 必传，自动携带 trace 字段）与 `Xxxf(ctx, format, ...)` 两种形式；`msg` 后可跟 slog 键值对参数：`Info(ctx, "user created", "user_id", 123)`。
+
+### 无 ctx 打印（log 风格）
+
+启动、后台任务等非请求场景没有 ctx，使用 `Print` / `Printf`（INFO 级，不携带 trace 字段）：
+
+```go
+logger.Print("server starting", "port", 8080)   // 可带键值对
+logger.Printf("listening on %s:%d", "0.0.0.0", 8080)
+```
 
 ### 3. trace 三元组（与追踪体系对接的唯一契约）
 

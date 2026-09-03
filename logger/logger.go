@@ -98,6 +98,20 @@ func (l *Logger) Fatalf(ctx context.Context, format string, args ...any) {
 	os.Exit(1)
 }
 
+// ---- 无 ctx 打印（log 风格） ----
+// 面向启动、后台任务等非请求场景：内部使用 context.Background()，
+// 因此不携带 trace 链路字段；请求内日志请使用 Info(ctx, ...) 等带 ctx 方法。
+
+// Print 输出 INFO 级日志，args 为 slog 键值对字段
+func (l *Logger) Print(msg string, args ...any) {
+	l.log(context.Background(), INFO, msg, args...)
+}
+
+// Printf 格式化输出 INFO 级日志（无 ctx）
+func (l *Logger) Printf(format string, args ...any) {
+	l.log(context.Background(), INFO, fmt.Sprintf(format, args...))
+}
+
 // log 核心写入逻辑
 func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) {
 	if level < l.cfg.Level {
