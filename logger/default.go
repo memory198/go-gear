@@ -6,6 +6,13 @@ import (
 )
 
 // defaultLogger 包级默认日志实例，开箱即用
+//
+// 使用 atomic.Pointer 而非普通字段的原因：
+//   - 读：包级快捷方法（Info/Print 等）在任意 goroutine 高频调用 getDefault()，
+//     日志是最热路径，要求无锁读（Load 为原子指令，零竞争开销）
+//   - 写：SetDefault 允许运行时替换默认实例（如 main 按配置初始化后替换），
+//     与并发读构成读写竞争，需原子同步保证 happens-before
+//   - 实例内部的并发写入由 Logger 自身的 mutex 保护，与本处原子读写分层解决
 var defaultLogger atomic.Pointer[Logger]
 
 func init() {

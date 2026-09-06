@@ -66,6 +66,31 @@ func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge
 
 // ---- 实例方法：不带格式化 ----
 
+// 日志显示效果（text 格式，msg 后的键值对以 key=value 追加）：
+// ctx 携带 root_trace_id 时输出 [abc123] 段（Print/Printf 无 ctx，无此段）
+//
+//	Info(ctx, "user created", "user_id", 123)
+//	→ 2026-09-02 10:30:00.123456 [INFO] [abc123] handler/user.go:42 user created user_id=123
+//
+//	Debug(ctx, "cache hit")
+//	→ 2026-09-02 10:30:00.123456 [DEBUG] [abc123] handler/user.go:42 cache hit
+//
+//	Warn(ctx, "slow query", "ms", 320)
+//	→ 2026-09-02 10:30:00.123456 [WARN] [abc123] handler/user.go:42 slow query ms=320
+//
+//	Error(ctx, "db down")
+//	→ 2026-09-02 10:30:00.123456 [ERROR] [abc123] handler/user.go:42 db down
+//
+//	Print("server starting", "port", 8080)
+//	→ 2026-09-02 10:30:00.123456 [INFO] main.go:42 server starting port=8080
+//
+// JSON 格式（json 编码器）携带完整链路字段，键值对平铺为独立 JSON 字段：
+//
+//	Info(ctx, "user created", "user_id", 123)
+//	→ {"time":"2026-09-02 10:30:00.123456","level":"INFO","msg":"user created",
+//	   "caller":"handler/user.go:42","root_trace_id":"abc123",
+//	   "middle_span_ids":["m1"],"current_span_id":"s2","user_id":123}
+
 func (l *Logger) Debug(ctx context.Context, msg string, args ...any)  { l.log(ctx, DEBUG, msg, args...) }
 func (l *Logger) Info(ctx context.Context, msg string, args ...any)   { l.log(ctx, INFO, msg, args...) }
 func (l *Logger) Warn(ctx context.Context, msg string, args ...any)   { l.log(ctx, WARN, msg, args...) }
@@ -131,9 +156,9 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 		Level:         levelNames[level],
 		Msg:           msg,
 		Caller:        caller,
-		RootTraceID:   ti.RootID,
-		MiddleSpanIDs: ti.MiddleIDs,
-		CurrentSpanID: ti.CurrentID,
+		RootTraceID:   ti.RootTraceID,
+		MiddleSpanIDs: ti.MiddleSpanIDs,
+		CurrentSpanID: ti.CurrentSpanID,
 		fields:        parseArgs(args),
 	}
 

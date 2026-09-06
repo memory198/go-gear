@@ -11,7 +11,15 @@ type currentSpanIDKey struct{}
 // ---- 链路字段 context key ----
 // 值由调用方自行生成、派生并写入 context，logger 只负责读取。
 
-// RootTraceIDKey context 中存储根链路追踪 ID 的 key
+// RootTraceIDKey context 中存储根链路追踪 ID（trace id）的 key
+//
+// trace id 是整条请求链路的唯一标识，一条链路内只允许一个值：
+//   - 子上下文（StartSpan/WithTimeout/后台任务派生等）必须继承，禁止生成新值——
+//     否则链路被拆成多条独立 trace，日志按 trace 聚合、跨服务串联都会断裂
+//   - 需要表达"新的环节 / 新任务 / 新链路"时用父子 span（StartSpan 派生、
+//     current_span_id / middle_span_ids 记录层次），而不是更换 trace id
+//   - 新 trace id 仅由链路起点生成：gctx.NewContext 在请求无上游追踪
+//     （无 traceparent / X-Trace-ID）时自动生成，其余场景一律透传继承
 var RootTraceIDKey = rootTraceIDKey{}
 
 // MiddleSpanIDsKey context 中存储中间 span ID 列表的 key
@@ -22,9 +30,9 @@ var CurrentSpanIDKey = currentSpanIDKey{}
 
 // traceInfo 从 context 中取出的链路信息三元组
 type traceInfo struct {
-	RootID    string
-	MiddleIDs []string
-	CurrentID string
+	RootTraceID    string
+	MiddleSpanIDs []string
+	CurrentSpanID string
 }
 
 // traceFromCtx 从 context 中提取链路追踪字段
@@ -34,9 +42,9 @@ func traceFromCtx(ctx context.Context) traceInfo {
 		return traceInfo{}
 	}
 	return traceInfo{
-		RootID:    stringFromCtx(ctx, RootTraceIDKey),
-		MiddleIDs: stringSliceFromCtx(ctx, MiddleSpanIDsKey),
-		CurrentID: stringFromCtx(ctx, CurrentSpanIDKey),
+		RootTraceID:    stringFromCtx(ctx, RootTraceIDKey),
+		MiddleSpanIDs: stringSliceFromCtx(ctx, MiddleSpanIDsKey),
+		CurrentSpanID: stringFromCtx(ctx, CurrentSpanIDKey),
 	}
 }
 
