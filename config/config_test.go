@@ -416,25 +416,23 @@ database:
 	}
 }
 
-// TestLoad_EnvOverride_LogCallerFalse APP_LOG_CALLER=false 时应禁用 caller 输出。
-// 注意源码中 APP_LOG_CALLER 的逻辑是 `if v == "false" { cfg.Log.Caller = false }`，
-// 因此只有显式设为 "false" 才会关闭，其他值（包括不设置）不影响。
-func TestLoad_EnvOverride_LogCallerFalse(t *testing.T) {
-	t.Setenv("APP_LOG_CALLER", "false")
+// TestLoad_EnvOverride_LogCaller APP_LOG_CALLER=true 可开启文件未启用的 caller
+func TestLoad_EnvOverride_LogCaller(t *testing.T) {
+	t.Setenv("APP_LOG_CALLER", "true")
 
 	dir := t.TempDir()
-	// 文件中 caller=true
+	// 文件中 caller=false（未启用）
 	path := writeFile(t, dir, "config.yaml", `
 log:
-  caller: true
+  caller: false
 `)
 
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() 返回错误: %v", err)
 	}
-	if cfg.Log.Caller {
-		t.Error("APP_LOG_CALLER=false 应将 Log.Caller 置为 false")
+	if !cfg.Log.Caller {
+		t.Error("APP_LOG_CALLER=true 应将 Log.Caller 置为 true")
 	}
 }
 

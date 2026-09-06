@@ -56,11 +56,11 @@ logger.Printf("listening on %s:%d", "0.0.0.0", 8080)
 
 ### 6. caller 定位
 
-`findCaller` 遍历调用栈跳过 logger 包与 runtime 内部帧，输出相对路径:行号，不受内联影响；`Caller` 配置可关闭。
+`findCaller` 跳过 logger 包与 runtime 内部帧，输出一行直接调用位置（相对路径:行号），**非调用栈**；同一调用点二次命中缓存，性能开销极小。由 `Config.Caller` 开关控制（默认 true）。
 
 ## 配置项（`Config`）
 
-`Level` / `Format`(text|json) / `Console` / `FileDir` / `Filename` / `MaxAge` / `Caller`
+`Level` / `Format`(text|json) / `Console` / `FileDir` / `Filename` / `MaxAge` / `Caller`(bool)
 
 ## 与其他模块的关系
 

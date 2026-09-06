@@ -20,7 +20,7 @@ type Config struct {
 	FileDir  string // 文件输出目录，空则不写文件
 	Filename string // 文件名（不含扩展名），空则取程序名
 	MaxAge   int    // 日志保留天数，<=0 不清理
-	Caller   bool   // 是否输出调用文件和行号，默认 true
+	Caller   bool   // 是否记录一行调用位置（直接调用者，内部有缓存，非调用栈）
 }
 
 // Logger 日志实例
@@ -91,10 +91,10 @@ func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge
 //	   "caller":"handler/user.go:42","root_trace_id":"abc123",
 //	   "middle_span_ids":["m1"],"current_span_id":"s2","user_id":123}
 
-func (l *Logger) Debug(ctx context.Context, msg string, args ...any)  { l.log(ctx, DEBUG, msg, args...) }
-func (l *Logger) Info(ctx context.Context, msg string, args ...any)   { l.log(ctx, INFO, msg, args...) }
-func (l *Logger) Warn(ctx context.Context, msg string, args ...any)   { l.log(ctx, WARN, msg, args...) }
-func (l *Logger) Error(ctx context.Context, msg string, args ...any)  { l.log(ctx, ERROR, msg, args...) }
+func (l *Logger) Debug(ctx context.Context, msg string, args ...any) { l.log(ctx, DEBUG, msg, args...) }
+func (l *Logger) Info(ctx context.Context, msg string, args ...any)  { l.log(ctx, INFO, msg, args...) }
+func (l *Logger) Warn(ctx context.Context, msg string, args ...any)  { l.log(ctx, WARN, msg, args...) }
+func (l *Logger) Error(ctx context.Context, msg string, args ...any) { l.log(ctx, ERROR, msg, args...) }
 
 // Fatal 输出 FATAL 等级日志后退出程序（调用 os.Exit(1)，defer 不会执行）
 func (l *Logger) Fatal(ctx context.Context, msg string, args ...any) {
@@ -189,41 +189,56 @@ func (l *Logger) Close() error {
 	return nil
 }
 
-// findCaller 向上遍历调用栈，找到第一个不属于 logger 包和运行时的帧
-// 返回 "相对路径:行号"，不受编译器内联影响
-func findCaller() string {
-	const maxDepth = 15
-	pcs := make([]uintptr, maxDepth)
-	// skip=1 跳过 runtime.Callers 自身
-	n := runtime.Callers(1, pcs)
-	frames := runtime.CallersFrames(pcs[:n])
+// caller 收集缓存：避免每行日志重复做昂贵的栈解析
+var (
+	// callerCache 以首个业务帧的 pc 为 key，缓存其 "file:line"
+	// 同一行代码重复打日志时直接命中，跳过栈解析
+	callerCache sync.Map // map[uintptr]string
+	cwdOnce     sync.Once
+	cwdValue    string
+)
 
-	for {
-		f, more := frames.Next()
-		if f.Function == "" {
+// callerCwd 获取工作目录（仅首次 syscall，后续命中缓存）
+func callerCwd() string {
+	cwdOnce.Do(func() { cwdValue, _ = os.Getwd() })
+	return cwdValue
+}
+
+// findCaller 向上找到第一个不属于 logger 包和运行时的调用位置，返回 "相对路径:行号"
+// 仅取一行（直接调用者），不打印调用栈；同一位置二次调用命中缓存
+func findCaller() string {
+	// 栈数组而非堆分配；16 帧足够覆盖 logger 内部 2-3 帧 + 业务调用链
+	var pcs [16]uintptr
+	n := runtime.Callers(1, pcs[:])
+
+	for i := 0; i < n; i++ {
+		pc := pcs[i]
+		fn := runtime.FuncForPC(pc)
+		if fn == nil {
 			break
 		}
+		name := fn.Name()
 		// 跳过 logger 包和 runtime 内部帧
-		if strings.Contains(f.Function, "github.com/memory198/go-gear/logger.") ||
-			strings.HasPrefix(f.Function, "runtime.") {
-			if !more {
-				break
-			}
+		if strings.Contains(name, "github.com/memory198/go-gear/logger.") ||
+			strings.HasPrefix(name, "runtime.") {
 			continue
 		}
-		return fmt.Sprintf("%s:%d", relativeFile(f.File), f.Line)
+		// 缓存命中：同一日志点直接复用
+		if cached, ok := callerCache.Load(pc); ok {
+			return cached.(string)
+		}
+		file, line := fn.FileLine(pc)
+		pos := fmt.Sprintf("%s:%d", relativeFile(file), line)
+		callerCache.LoadOrStore(pc, pos)
+		return pos
 	}
-	return "???"
+	return ""
 }
 
 // relativeFile 将绝对路径转为相对于当前工作目录的路径
 // 不在工作目录下时，保留最后两级路径作为兜底
 func relativeFile(absPath string) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return shortFile(absPath)
-	}
-	rel, err := filepath.Rel(cwd, absPath)
+	rel, err := filepath.Rel(callerCwd(), absPath)
 	if err != nil {
 		return shortFile(absPath)
 	}

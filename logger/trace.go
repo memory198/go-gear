@@ -30,7 +30,7 @@ var CurrentSpanIDKey = currentSpanIDKey{}
 
 // traceInfo 从 context 中取出的链路信息三元组
 type traceInfo struct {
-	RootTraceID    string
+	RootTraceID   string
 	MiddleSpanIDs []string
 	CurrentSpanID string
 }
@@ -42,7 +42,7 @@ func traceFromCtx(ctx context.Context) traceInfo {
 		return traceInfo{}
 	}
 	return traceInfo{
-		RootTraceID:    stringFromCtx(ctx, RootTraceIDKey),
+		RootTraceID:   stringFromCtx(ctx, RootTraceIDKey),
 		MiddleSpanIDs: stringSliceFromCtx(ctx, MiddleSpanIDsKey),
 		CurrentSpanID: stringFromCtx(ctx, CurrentSpanIDKey),
 	}

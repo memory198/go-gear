@@ -36,21 +36,27 @@ func getDefault() *Logger {
 
 // ---- 包级快捷方法 ----
 
-func Debug(ctx context.Context, msg string, args ...any)  { getDefault().Debug(ctx, msg, args...) }
-func Info(ctx context.Context, msg string, args ...any)   { getDefault().Info(ctx, msg, args...) }
-func Warn(ctx context.Context, msg string, args ...any)   { getDefault().Warn(ctx, msg, args...) }
-func Error(ctx context.Context, msg string, args ...any)  { getDefault().Error(ctx, msg, args...) }
-func Fatal(ctx context.Context, msg string, args ...any)  { getDefault().Fatal(ctx, msg, args...) }
+func Debug(ctx context.Context, msg string, args ...any) { getDefault().Debug(ctx, msg, args...) }
+func Info(ctx context.Context, msg string, args ...any)  { getDefault().Info(ctx, msg, args...) }
+func Warn(ctx context.Context, msg string, args ...any)  { getDefault().Warn(ctx, msg, args...) }
+func Error(ctx context.Context, msg string, args ...any) { getDefault().Error(ctx, msg, args...) }
+func Fatal(ctx context.Context, msg string, args ...any) { getDefault().Fatal(ctx, msg, args...) }
 
-func Debugf(ctx context.Context, format string, args ...any) { getDefault().Debugf(ctx, format, args...) }
-func Infof(ctx context.Context, format string, args ...any)  { getDefault().Infof(ctx, format, args...) }
-func Warnf(ctx context.Context, format string, args ...any)  { getDefault().Warnf(ctx, format, args...) }
-func Errorf(ctx context.Context, format string, args ...any) { getDefault().Errorf(ctx, format, args...) }
-func Fatalf(ctx context.Context, format string, args ...any) { getDefault().Fatalf(ctx, format, args...) }
+func Debugf(ctx context.Context, format string, args ...any) {
+	getDefault().Debugf(ctx, format, args...)
+}
+func Infof(ctx context.Context, format string, args ...any) { getDefault().Infof(ctx, format, args...) }
+func Warnf(ctx context.Context, format string, args ...any) { getDefault().Warnf(ctx, format, args...) }
+func Errorf(ctx context.Context, format string, args ...any) {
+	getDefault().Errorf(ctx, format, args...)
+}
+func Fatalf(ctx context.Context, format string, args ...any) {
+	getDefault().Fatalf(ctx, format, args...)
+}
 
 // ---- 包级无 ctx 打印（log 风格） ----
 
-func Print(msg string, args ...any)   { getDefault().Print(msg, args...) }
+func Print(msg string, args ...any)     { getDefault().Print(msg, args...) }
 func Printf(format string, args ...any) { getDefault().Printf(format, args...) }
 
 // Close 关闭包级默认日志打印器
