@@ -14,13 +14,14 @@ import (
 
 // Config 日志配置
 type Config struct {
-	Level    Level  // 最低输出等级
-	Format   Format // TextFormat（默认）/ JSONFormat
-	Console  bool   // 是否输出到控制台（和文件可同时）
-	FileDir  string // 文件输出目录，空则不写文件
-	Filename string // 文件名（不含扩展名），空则取程序名
-	MaxAge   int    // 日志保留天数，<=0 不清理
-	Caller   bool   // 是否记录一行调用位置（直接调用者，内部有缓存，非调用栈）
+	Level         Level  // 最低输出等级
+	Format        Format // TextFormat（默认）/ JSONFormat
+	Console       bool   // 是否输出到控制台（和文件可同时）
+	FileDir       string // 文件输出目录，空则不写文件
+	Filename      string // 文件名（不含扩展名），空则取程序名
+	MaxAge        int    // 日志保留天数，<=0 不清理
+	Caller        bool   // 是否记录一行调用位置（直接调用者，内部有缓存，非调用栈）
+	MiddleSpanIDs bool   // 是否输出中间 span ID 链（默认关闭；开启需读取 gctx 聚合，有开销）
 }
 
 // Logger 日志实例
@@ -144,7 +145,7 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 	}
 
 	now := time.Now()
-	ti := traceFromCtx(ctx)
+	ti := traceFromCtx(ctx, l.cfg.MiddleSpanIDs)
 
 	var caller string
 	if l.cfg.Caller {

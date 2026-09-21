@@ -72,7 +72,7 @@ func TestLogFormat_WithRootTraceID(t *testing.T) {
 func TestLogJSONFormat_AllTraceFields(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: true},
+		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: true, MiddleSpanIDs: true},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -99,6 +99,30 @@ func TestLogJSONFormat_AllTraceFields(t *testing.T) {
 	}
 	if !strings.Contains(out, `"level":"INFO"`) {
 		t.Errorf("expected level in JSON, got %q", out)
+	}
+}
+
+func TestLogJSONFormat_MiddleSpanIDsDisabledByDefault(t *testing.T) {
+	// 默认（未开启 MiddleSpanIDs）不应输出 middle_span_ids
+	buf := &bytes.Buffer{}
+	l := &Logger{
+		cfg:     Config{Level: DEBUG, Format: JSONFormat},
+		enc:     jsonEncoder{},
+		writers: []io.Writer{buf},
+	}
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, RootTraceIDKey, "r")
+	ctx = context.WithValue(ctx, MiddleSpanIDsKey, []string{"m1", "m2"})
+
+	l.Info(ctx, "no middle span ids")
+
+	out := buf.String()
+	if strings.Contains(out, "middle_span_ids") {
+		t.Errorf("middle_span_ids should be omitted by default: %q", out)
+	}
+	if !strings.Contains(out, `"root_trace_id":"r"`) {
+		t.Errorf("root_trace_id should still be present: %q", out)
 	}
 }
 

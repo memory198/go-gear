@@ -36,16 +36,20 @@ type traceInfo struct {
 }
 
 // traceFromCtx 从 context 中提取链路追踪字段
+// withMiddleSpanIDs 为 false 时不读取中间 span 链（避免触发 gctx 的聚合开销）
 // 字段不存在或类型错误时对应字段置空，不阻断日志输出
-func traceFromCtx(ctx context.Context) traceInfo {
+func traceFromCtx(ctx context.Context, withMiddleSpanIDs bool) traceInfo {
 	if ctx == nil {
 		return traceInfo{}
 	}
-	return traceInfo{
+	ti := traceInfo{
 		RootTraceID:   stringFromCtx(ctx, RootTraceIDKey),
-		MiddleSpanIDs: stringSliceFromCtx(ctx, MiddleSpanIDsKey),
 		CurrentSpanID: stringFromCtx(ctx, CurrentSpanIDKey),
 	}
+	if withMiddleSpanIDs {
+		ti.MiddleSpanIDs = stringSliceFromCtx(ctx, MiddleSpanIDsKey)
+	}
+	return ti
 }
 
 // WithRootTraceID 将根链路追踪 ID 写入 context

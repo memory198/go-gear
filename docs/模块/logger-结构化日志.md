@@ -60,7 +60,7 @@ logger.Printf("listening on %s:%d", "0.0.0.0", 8080)
 
 ## 配置项（`Config`）
 
-`Level` / `Format`(text|json) / `Console` / `FileDir` / `Filename` / `MaxAge` / `Caller`(bool)
+`Level` / `Format`(text|json) / `Console` / `FileDir` / `Filename` / `MaxAge` / `Caller`(bool) / `MiddleSpanIDs`(bool，默认 false)
 
 ## 与其他模块的关系
 

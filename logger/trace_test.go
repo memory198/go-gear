@@ -7,14 +7,14 @@ import (
 
 func TestTraceFromCtx(t *testing.T) {
 	t.Run("nil context", func(t *testing.T) {
-		ti := traceFromCtx(nil)
+		ti := traceFromCtx(nil, true)
 		if ti.RootTraceID != "" || ti.CurrentSpanID != "" || len(ti.MiddleSpanIDs) != 0 {
 			t.Errorf("traceFromCtx(nil) should return empty traceInfo, got %+v", ti)
 		}
 	})
 
 	t.Run("missing keys", func(t *testing.T) {
-		ti := traceFromCtx(context.Background())
+		ti := traceFromCtx(context.Background(), true)
 		if ti.RootTraceID != "" || ti.CurrentSpanID != "" || len(ti.MiddleSpanIDs) != 0 {
 			t.Errorf("traceFromCtx() should return empty traceInfo, got %+v", ti)
 		}
@@ -22,7 +22,7 @@ func TestTraceFromCtx(t *testing.T) {
 
 	t.Run("wrong type value is ignored", func(t *testing.T) {
 		ctx := context.WithValue(context.Background(), RootTraceIDKey, 123)
-		ti := traceFromCtx(ctx)
+		ti := traceFromCtx(ctx, true)
 		if ti.RootTraceID != "" {
 			t.Errorf("RootTraceID should be empty for non-string value, got %q", ti.RootTraceID)
 		}
@@ -30,7 +30,7 @@ func TestTraceFromCtx(t *testing.T) {
 
 	t.Run("root_trace_id only", func(t *testing.T) {
 		ctx := context.WithValue(context.Background(), RootTraceIDKey, "root-abc")
-		ti := traceFromCtx(ctx)
+		ti := traceFromCtx(ctx, true)
 		if ti.RootTraceID != "root-abc" {
 			t.Errorf("RootTraceID = %q, want %q", ti.RootTraceID, "root-abc")
 		}
@@ -41,7 +41,7 @@ func TestTraceFromCtx(t *testing.T) {
 		ctx = context.WithValue(ctx, RootTraceIDKey, "r1")
 		ctx = context.WithValue(ctx, MiddleSpanIDsKey, []string{"m1", "m2"})
 		ctx = context.WithValue(ctx, CurrentSpanIDKey, "c3")
-		ti := traceFromCtx(ctx)
+		ti := traceFromCtx(ctx, true)
 		if ti.RootTraceID != "r1" {
 			t.Errorf("RootTraceID = %q, want r1", ti.RootTraceID)
 		}
@@ -50,6 +50,20 @@ func TestTraceFromCtx(t *testing.T) {
 		}
 		if ti.CurrentSpanID != "c3" {
 			t.Errorf("CurrentSpanID = %q, want c3", ti.CurrentSpanID)
+		}
+	})
+
+	t.Run("middle span ids disabled", func(t *testing.T) {
+		ctx := context.Background()
+		ctx = context.WithValue(ctx, RootTraceIDKey, "r1")
+		ctx = context.WithValue(ctx, MiddleSpanIDsKey, []string{"m1", "m2"})
+		ctx = context.WithValue(ctx, CurrentSpanIDKey, "c3")
+		ti := traceFromCtx(ctx, false)
+		if len(ti.MiddleSpanIDs) != 0 {
+			t.Errorf("MiddleSpanIDs should be empty when disabled, got %v", ti.MiddleSpanIDs)
+		}
+		if ti.RootTraceID != "r1" || ti.CurrentSpanID != "c3" {
+			t.Errorf("other trace fields should still be read: %+v", ti)
 		}
 	})
 }
