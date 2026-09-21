@@ -273,7 +273,7 @@ if err != nil {
     logger.Print("otlp sink disabled: ", err)  // 导出不可用不影响落盘日志
 } else {
     defer shutdown(ctx)                        // 进程退出前必须调用，刷新批量缓冲
-    l.AddHook(sink.Emit)
+    l.AddHook(sink)
 }
 logger.SetDefault(l)
 ```

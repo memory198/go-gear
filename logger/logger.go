@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/memory198/go-gear/logger/core"
 )
 
 // Config 日志配置
@@ -33,14 +35,14 @@ type Config struct {
 
 // Logger 日志实例
 type Logger struct {
-	cfg        Config                 // 日志配置（级别、格式、输出渠道等）
-	mu         sync.Mutex             // 并发写入锁，保证日志行不交叉
-	enc        encoder                // 日志编码器（text 或 json）
-	writers    []io.Writer            // 输出目标列表（stdout + 文件可同时存在）
-	currentDay string                 // 当前日志文件所属日期，用于判断是否需要滚动
-	file       *os.File               // 当前打开的日志文件句柄，仅文件输出时非 nil
-	res        Resource               // resource 元信息（构造时确定，避免每行重复计算）
-	hooks      atomic.Pointer[[]Hook] // 结构化输出旁路（OTLP 等），空时热路径零开销
+	cfg        Config                    // 日志配置（级别、格式、输出渠道等）
+	mu         sync.Mutex                // 并发写入锁，保证日志行不交叉
+	enc        encoder                   // 日志编码器（text 或 json）
+	writers    []io.Writer               // 输出目标列表（stdout + 文件可同时存在）
+	currentDay string                    // 当前日志文件所属日期，用于判断是否需要滚动
+	file       *os.File                  // 当前打开的日志文件句柄，仅文件输出时非 nil
+	res        Resource                  // resource 元信息（构造时确定，避免每行重复计算）
+	hooks      atomic.Pointer[[]Emitter] // 结构化输出旁路（OTLP 等），空时热路径零开销
 }
 
 // New 创建 Logger
@@ -118,8 +120,10 @@ func (l *Logger) Warn(ctx context.Context, msg string, args ...any)  { l.log(ctx
 func (l *Logger) Error(ctx context.Context, msg string, args ...any) { l.log(ctx, ERROR, msg, args...) }
 
 // Fatal 输出 FATAL 等级日志后退出程序（调用 os.Exit(1)，defer 不会执行）
+// 退出前会尝试刷新实现了 core.Flusher 的 Hook（如 OTLP 批量缓冲）
 func (l *Logger) Fatal(ctx context.Context, msg string, args ...any) {
 	l.log(ctx, FATAL, msg, args...)
+	l.flushHooks(ctx)
 	os.Exit(1)
 }
 
@@ -139,9 +143,26 @@ func (l *Logger) Errorf(ctx context.Context, format string, args ...any) {
 }
 
 // Fatalf 格式化 FATAL 等级日志后退出程序
+// 退出前会尝试刷新实现了 core.Flusher 的 Hook
 func (l *Logger) Fatalf(ctx context.Context, format string, args ...any) {
 	l.log(ctx, FATAL, fmt.Sprintf(format, args...))
+	l.flushHooks(ctx)
 	os.Exit(1)
+}
+
+// flushHooks 刷新支持 core.Flusher 的 Hook（带短超时，避免拖住退出流程）
+func (l *Logger) flushHooks(ctx context.Context) {
+	hs := l.hooks.Load()
+	if hs == nil {
+		return
+	}
+	flushCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	for _, h := range *hs {
+		if f, ok := h.(core.Flusher); ok {
+			_ = f.Flush(flushCtx)
+		}
+	}
 }
 
 // ---- 无 ctx 打印（log 风格） ----
@@ -159,18 +180,22 @@ func (l *Logger) Printf(format string, args ...any) {
 }
 
 // AddHook 注册结构化日志消费点（如 OTLP 导出），在序列化之前对每条日志调用
-// 线程安全；通常应在服务启动阶段注册
-func (l *Logger) AddHook(h Hook) {
+// 线程安全（CAS 循环）；通常应在服务启动阶段注册
+func (l *Logger) AddHook(h Emitter) {
 	if h == nil {
 		return
 	}
-	old := l.hooks.Load()
-	var next []Hook
-	if old != nil {
-		next = append(next, *old...)
+	for {
+		old := l.hooks.Load()
+		var next []Emitter
+		if old != nil {
+			next = append(next, *old...)
+		}
+		next = append(next, h)
+		if l.hooks.CompareAndSwap(old, &next) {
+			return
+		}
 	}
-	next = append(next, h)
-	l.hooks.Store(&next)
 }
 
 // log 核心写入逻辑
@@ -204,7 +229,7 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 	// 结构化旁路：在序列化之前分发（未注册 Hook 时无任何开销）
 	if hs := l.hooks.Load(); hs != nil {
 		for _, h := range *hs {
-			h(ctx, &rec)
+			h.Emit(ctx, &rec)
 		}
 	}
 

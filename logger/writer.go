@@ -48,28 +48,31 @@ func (l *Logger) openFile() error {
 }
 
 // rotateFile 按天滚动到新的日志文件
+// 先打开新文件，成功后再替换/关闭旧文件；
+// 打开失败时保留旧文件继续写入，避免日志静默丢失
 func (l *Logger) rotateFile(today string) {
-	if l.file != nil {
-		_ = l.file.Close()
-	}
-
 	path := l.logFilePath(today)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "logger: rotate failed: %v\n", err)
+		// 保留旧句柄继续写（不丢日志）；同时更新 currentDay，避免每行重试
+		fmt.Fprintf(os.Stderr, "logger: rotate to %s failed, keep writing current file: %v\n", path, err)
+		l.currentDay = today
 		return
 	}
 
+	old := l.file
 	// 将 writers 中的旧文件引用替换为新文件
 	for i, w := range l.writers {
-		if w == l.file {
+		if w == old {
 			l.writers[i] = f
 			break
 		}
 	}
-
 	l.file = f
 	l.currentDay = today
+	if old != nil {
+		_ = old.Close()
+	}
 
 	// 滚动后清理过期日志
 	l.cleanExpiredLogs()
@@ -97,8 +100,8 @@ func (l *Logger) cleanExpiredLogs() {
 			continue
 		}
 		name := entry.Name()
-		// 只清理匹配前缀且后缀为 .log 或 .日期.log 的文件
-		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".log") {
+		// 只清理本 Logger 的日志文件（精确匹配 <prefix>.<YYYY-MM-DD>.log）
+		if !isOwnLogFile(name, prefix) {
 			continue
 		}
 
@@ -129,6 +132,22 @@ func (l *Logger) logFilePrefix() string {
 		filename = execName()
 	}
 	return filename
+}
+
+// isOwnLogFile 判断文件名是否属于本 Logger：<prefix>.<YYYY-MM-DD>.log
+// 使用前缀+"."与日期格式校验，避免前缀存在包含关系时误删其他实例的文件
+// （例如 prefix=app 不应匹配 app2.2026-01-01.log）
+func isOwnLogFile(name, prefix string) bool {
+	const suffix = ".log"
+	if !strings.HasPrefix(name, prefix+".") || !strings.HasSuffix(name, suffix) {
+		return false
+	}
+	day := name[len(prefix)+1 : len(name)-len(suffix)]
+	if len(day) != len("2006-01-02") {
+		return false
+	}
+	_, err := time.Parse("2006-01-02", day)
+	return err == nil
 }
 
 // execName 获取程序名（不含路径和扩展名）

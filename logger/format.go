@@ -24,7 +24,9 @@ type (
 	Record   = core.Record
 	Attr     = core.Attr
 	Resource = core.Resource
-	Hook     = core.Hook
+	Emitter  = core.Emitter
+	HookFunc = core.HookFunc
+	Flusher  = core.Flusher
 )
 
 // reservedKeys 内置字段名集合

@@ -2,6 +2,8 @@ package logger
 
 import (
 	"context"
+	"io"
+	"os"
 	"sync/atomic"
 )
 
@@ -16,17 +18,25 @@ import (
 var defaultLogger atomic.Pointer[Logger]
 
 func init() {
-	l, _ := New(Config{
+	l, err := New(Config{
 		Level:   DEBUG,
 		Format:  TextFormat,
 		Console: true,
 		Caller:  true,
 	})
+	if err != nil || l == nil {
+		// 理论上不会发生；降级为 stderr 直写，保证包级方法不会因 nil 而 panic
+		l = &Logger{cfg: Config{Level: DEBUG}, enc: textEncoder{}, writers: []io.Writer{os.Stderr}}
+	}
 	defaultLogger.Store(l)
 }
 
 // SetDefault 替换包级默认日志打印器（线程安全）
+// 传入 nil 时忽略（避免后续包级调用空指针）
 func SetDefault(l *Logger) {
+	if l == nil {
+		return
+	}
 	defaultLogger.Store(l)
 }
 

@@ -78,9 +78,10 @@ func WithBatchInterval(d time.Duration) Option {
 	return func(c *config) { c.batchInterval = d }
 }
 
-// Sink OTLP 日志导出器，实现 core.Hook
+// Sink OTLP 日志导出器，实现 core.Hook（并实现 core.Flusher）
 type Sink struct {
-	logger otellog.Logger
+	provider *sdklog.LoggerProvider
+	logger   otellog.Logger
 }
 
 // New 创建 Sink 并返回关闭函数
@@ -114,7 +115,12 @@ func New(ctx context.Context, opts ...Option) (*Sink, func(context.Context) erro
 		)),
 	)
 
-	return &Sink{logger: provider.Logger("go-gear")}, provider.Shutdown, nil
+	return &Sink{provider: provider, logger: provider.Logger("go-gear")}, provider.Shutdown, nil
+}
+
+// Flush 强制刷新批量缓冲（实现 core.Flusher，Fatal 退出前会被调用）
+func (s *Sink) Flush(ctx context.Context) error {
+	return s.provider.ForceFlush(ctx)
 }
 
 // Emit 实现 core.Hook：把结构化记录翻译为 OTel LogRecord 并提交批量导出

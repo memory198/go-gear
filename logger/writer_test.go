@@ -241,3 +241,63 @@ func TestDefaultLogger(t *testing.T) {
 	l2, _ := New(Config{Console: true})
 	SetDefault(l2)
 }
+
+// TestCleanExpiredLogsPrefixIsolation 前缀存在包含关系时不应误删其他实例的日志
+func TestCleanExpiredLogsPrefixIsolation(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().AddDate(0, 0, -10)
+	mk := func(name string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	own := mk("app.2026-01-01.log")            // 本实例，应清理
+	otherInstance := mk("app2.2026-01-01.log") // 其他实例前缀包含 app，应保留
+	otherName := mk("app-debug.log")           // 非日期格式，应保留
+
+	l, err := New(Config{Level: DEBUG, FileDir: dir, Filename: "app", MaxAge: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	if _, err := os.Stat(own); !os.IsNotExist(err) {
+		t.Error("own expired log should be removed")
+	}
+	for _, p := range []string{otherInstance, otherName} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("file of other instance should be kept: %s (%v)", p, err)
+		}
+	}
+}
+
+// TestRotateFileFailureKeepsOldFile 滚动打开失败时应保留旧句柄（不丢日志）
+func TestRotateFileFailureKeepsOldFile(t *testing.T) {
+	dir := t.TempDir()
+	l, err := New(Config{Level: DEBUG, FileDir: dir, Filename: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	oldFile := l.file
+	// 指向不存在的目录，使 OpenFile 失败
+	l.cfg.FileDir = filepath.Join(dir, "missing", "sub")
+	l.rotateFile("2099-01-01")
+
+	if l.file != oldFile {
+		t.Error("failed rotate should keep the old file handle")
+	}
+	if l.currentDay != "2099-01-01" {
+		t.Errorf("failed rotate should update currentDay to avoid retry storm, got %q", l.currentDay)
+	}
+	if oldFile == nil {
+		t.Error("old file handle should remain usable")
+	}
+}

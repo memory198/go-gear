@@ -333,9 +333,9 @@ func TestHookReceivesRecord(t *testing.T) {
 	l, buf := newTestLogger(DEBUG)
 
 	var got *Record
-	l.AddHook(func(ctx context.Context, r *Record) {
+	l.AddHook(HookFunc(func(ctx context.Context, r *Record) {
 		got = r
-	})
+	}))
 
 	ctx := context.WithValue(context.Background(), RootTraceIDKey, "r1")
 	ctx = context.WithValue(ctx, CurrentSpanIDKey, "s1")
@@ -371,6 +371,54 @@ func TestAddHookNilSafe(t *testing.T) {
 	if !strings.Contains(buf.String(), "no hook") {
 		t.Errorf("output should be normal without hooks: %q", buf.String())
 	}
+}
+
+func TestAddHookConcurrent(t *testing.T) {
+	// 并发注册 Hook 不应丢失（CAS 保证）
+	l, _ := newTestLogger(DEBUG)
+	const n = 16
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			l.AddHook(HookFunc(func(context.Context, *Record) {}))
+		}()
+	}
+	wg.Wait()
+
+	hs := l.hooks.Load()
+	if hs == nil || len(*hs) != n {
+		t.Errorf("concurrent AddHook lost registrations: got %d, want %d", len(*hs), n)
+	}
+}
+
+func TestFlushHooksOnFatal(t *testing.T) {
+	// Fatal 路径会刷新实现 Flusher 的 Emitter（不真正调用 Fatal 以免退出进程）
+	l, _ := newTestLogger(DEBUG)
+	flushed := false
+	l.AddHook(&fakeFlusher{onFlush: func() { flushed = true }})
+
+	l.flushHooks(context.Background())
+	if !flushed {
+		t.Error("flushHooks should call Flush on Emitter implementing core.Flusher")
+	}
+}
+
+type fakeFlusher struct{ onFlush func() }
+
+func (f *fakeFlusher) Emit(context.Context, *Record) {}
+func (f *fakeFlusher) Flush(context.Context) error   { f.onFlush(); return nil }
+
+func TestSetDefaultNilIgnored(t *testing.T) {
+	// SetDefault(nil) 应被忽略，包级方法不 panic
+	old := getDefault()
+	defer SetDefault(old)
+	SetDefault(nil)
+	if getDefault() == nil {
+		t.Fatal("default logger should not become nil")
+	}
+	Info(context.Background(), "still works")
 }
 
 func TestConcurrentWrites(t *testing.T) {

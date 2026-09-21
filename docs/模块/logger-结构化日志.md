@@ -73,7 +73,8 @@ logger/core         Level / Record / Attr / Resource / Hook（零依赖，供扩
 logger          logger/otlpsink     主包零 otel 依赖；otlpsink 不依赖主包
 ```
 
-- **`AddHook(h Hook)`**：在序列化之前分发结构化 `core.Record`（atomic 存储，未注册时热路径零开销）
+- **`AddHook(e Emitter)`**：在序列化之前分发结构化 `core.Record`（CAS 存储，未注册时热路径零开销）；函数式实现可用 `HookFunc` 适配
+- **`core.Flusher`**：Emitter 可选实现；`Fatal/Fatalf` 退出前会调用其 `Flush`（如刷新 OTLP 批量缓冲）
 - **`logger/otlpsink`**（可选）：实现 `core.Hook`，把 Record 翻译为 OTel LogRecord 经 OTLP/HTTP 导出到 Collector；提供 `WithEndpoint/WithInsecure/WithService/...` 选项与 `Shutdown`
 - **链路关联**：ctx 已含 OTel span context 时天然对齐；否则用 Record 的 gctx hex id 注入 SpanContext
 
@@ -82,7 +83,7 @@ sink, shutdown, err := otlpsink.New(ctx,
     otlpsink.WithEndpoint("localhost:4318"), otlpsink.WithService("user-api", "1.2.0"))
 if err == nil {
     defer shutdown(ctx)
-    l.AddHook(sink.Emit)
+    l.AddHook(sink)
 }
 ```
 

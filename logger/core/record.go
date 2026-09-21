@@ -41,6 +41,20 @@ func (r Resource) Empty() bool {
 		r.Environment == "" && r.HostName == ""
 }
 
-// Hook 结构化日志消费点：在 JSON/text 序列化之前被调用
+// Emitter 结构化日志消费点：在 JSON/text 序列化之前被调用
 // 实现方不得保留 Record 指针（其在后续日志写入中可能被复用）
-type Hook func(ctx context.Context, r *Record)
+type Emitter interface {
+	Emit(ctx context.Context, r *Record)
+}
+
+// HookFunc 函数适配器：便于用普通函数作为 Emitter 注册
+type HookFunc func(ctx context.Context, r *Record)
+
+// Emit 实现 Emitter
+func (f HookFunc) Emit(ctx context.Context, r *Record) { f(ctx, r) }
+
+// Flusher 可由 Emitter 额外实现：在 Fatal 等退出路径上被调用以刷新缓冲
+// （如 OTLP 批量导出器需在进程退出前 ForceFlush）
+type Flusher interface {
+	Flush(ctx context.Context) error
+}
