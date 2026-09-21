@@ -24,10 +24,9 @@ type Context struct {
 	req *http.Request
 	rw  http.ResponseWriter
 
-	traceID       string   // 请求追踪 ID
-	spanID        string   // 当前 span ID
-	parentSpanID  string   // 父 span ID
-	middleSpanIDs []string // 中间 span ID 链（不含 current）
+	traceID      string // 请求追踪 ID
+	spanID       string // 当前 span ID
+	parentSpanID string // 父 span ID
 
 	values map[string]any // 自定义值存储，Set 时检查本层重复
 	cancel context.CancelFunc
@@ -104,15 +103,20 @@ func (c *Context) SpanID() string { return c.spanID }
 // ParentSpanID 获取父 span ID
 func (c *Context) ParentSpanID() string { return c.parentSpanID }
 
-// MiddleSpanIDs 获取中间 span ID 链
+// MiddleSpanIDs 获取中间 span ID 链（不含当前），顺序为根 → 父
+// 单次遍历父链（O(d)），不做递归拷贝
 func (c *Context) MiddleSpanIDs() []string {
-	// 从父链聚合所有中间 span
-	var ids []string
-	if c.parent != nil {
-		ids = append(ids, c.parent.MiddleSpanIDs()...)
-		if c.parent.spanID != "" {
-			ids = append(ids, c.parent.spanID)
+	// 先自底向上收集（父 → 根）
+	var rev []string
+	for node := c.parent; node != nil; node = node.parent {
+		if node.spanID != "" {
+			rev = append(rev, node.spanID)
 		}
+	}
+	// 反转为 根 → 父 顺序
+	ids := make([]string, len(rev))
+	for i, id := range rev {
+		ids[len(rev)-1-i] = id
 	}
 	return ids
 }
