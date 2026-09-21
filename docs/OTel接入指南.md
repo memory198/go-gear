@@ -243,6 +243,51 @@ OTel 中间件挂上后，logger 输出自动包含 trace 链路字段：
 
 ---
 
+## 日志 OTLP 导出（可选）
+
+除 span 外，日志也可通过 OTLP 导出到同一个 Collector，实现**日志 ↔ trace 同后端互跳**。
+
+### 何时需要
+
+- 已在 OTel 生态（有 Collector），希望点开 span 直接看到该 trace 的日志
+- 免去在采集端（Promtail/filelog）配置 JSON 解析规则
+- 若日志已通过文件采集到 Loki/ELK，可不用此功能
+
+### 接入方式
+
+```go
+import "github.com/memory198/go-gear/logger/otlpsink"
+
+l, _ := logger.New(logger.Config{
+    Format: logger.JSONFormat, Console: true,
+    Service: "user-api", Version: "1.2.0", Env: "prod",   // resource 与 span 保持一致
+})
+
+sink, shutdown, err := otlpsink.New(ctx,
+    otlpsink.WithEndpoint("localhost:4318"),   // Collector 的 OTLP/HTTP 端口
+    otlpsink.WithInsecure(),                   // 本地/内网可关闭 TLS
+    otlpsink.WithService("user-api", "1.2.0"),
+    otlpsink.WithEnvironment("prod"),
+)
+if err != nil {
+    logger.Print("otlp sink disabled: ", err)  // 导出不可用不影响落盘日志
+} else {
+    defer shutdown(ctx)                        // 进程退出前必须调用，刷新批量缓冲
+    l.AddHook(sink.Emit)
+}
+logger.SetDefault(l)
+```
+
+### 说明
+
+- **落盘输出不受影响**：OTLP 是旁路，stdout/file 照常
+- **链路关联**：ctx 已含 OTel span context 时直接使用；仅 gctx 时用其 hex id 注入，日志与 span 的 trace_id/span_id 自动对齐
+- **severity**：日志级别数值即 OTel SeverityNumber，无需映射
+- **失败容错**：批量异步导出，Collector 不可用不会阻塞业务
+- **依赖**：`otlpsink` 为可选子包，主包 logger 不引入任何 otel 依赖
+
+---
+
 ## 采样策略
 
 | 策略 | 用法 | 适用场景 |
