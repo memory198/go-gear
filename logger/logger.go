@@ -9,12 +9,9 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
-
-// timeLayout 日志时间格式：RFC3339 + 微秒 + 时区偏移
-// 例：2026-09-21T10:30:00.123456+08:00（标准、可辨时区、精度足够）
-const timeLayout = "2006-01-02T15:04:05.000000Z07:00"
 
 // Config 日志配置
 type Config struct {
@@ -36,13 +33,14 @@ type Config struct {
 
 // Logger 日志实例
 type Logger struct {
-	cfg        Config      // 日志配置（级别、格式、输出渠道等）
-	mu         sync.Mutex  // 并发写入锁，保证日志行不交叉
-	enc        encoder     // 日志编码器（text 或 json）
-	writers    []io.Writer // 输出目标列表（stdout + 文件可同时存在）
-	currentDay string      // 当前日志文件所属日期，用于判断是否需要滚动
-	file       *os.File    // 当前打开的日志文件句柄，仅文件输出时非 nil
-	res        resource    // resource 元信息（构造时确定，避免每行重复计算）
+	cfg        Config                 // 日志配置（级别、格式、输出渠道等）
+	mu         sync.Mutex             // 并发写入锁，保证日志行不交叉
+	enc        encoder                // 日志编码器（text 或 json）
+	writers    []io.Writer            // 输出目标列表（stdout + 文件可同时存在）
+	currentDay string                 // 当前日志文件所属日期，用于判断是否需要滚动
+	file       *os.File               // 当前打开的日志文件句柄，仅文件输出时非 nil
+	res        Resource               // resource 元信息（构造时确定，避免每行重复计算）
+	hooks      atomic.Pointer[[]Hook] // 结构化输出旁路（OTLP 等），空时热路径零开销
 }
 
 // New 创建 Logger
@@ -58,7 +56,7 @@ func New(cfg Config) (*Logger, error) {
 	}
 
 	// resource 在构造时确定（host 缺省取本机主机名）
-	l.res = resource{
+	l.res = Resource{
 		ServiceName:    cfg.Service,
 		ServiceVersion: cfg.Version,
 		Environment:    cfg.Env,
@@ -160,6 +158,21 @@ func (l *Logger) Printf(format string, args ...any) {
 	l.log(context.Background(), INFO, fmt.Sprintf(format, args...))
 }
 
+// AddHook 注册结构化日志消费点（如 OTLP 导出），在序列化之前对每条日志调用
+// 线程安全；通常应在服务启动阶段注册
+func (l *Logger) AddHook(h Hook) {
+	if h == nil {
+		return
+	}
+	old := l.hooks.Load()
+	var next []Hook
+	if old != nil {
+		next = append(next, *old...)
+	}
+	next = append(next, h)
+	l.hooks.Store(&next)
+}
+
 // log 核心写入逻辑
 func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) {
 	if level < l.cfg.Level {
@@ -175,9 +188,9 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 		file, lineno = findCaller()
 	}
 
-	e := entry{
-		Timestamp:     now.Format(timeLayout),
-		SeverityText:  levelNames[level],
+	rec := Record{
+		Timestamp:     now,
+		Level:         level,
 		Body:          msg,
 		CodeFilepath:  file,
 		CodeLineno:    lineno,
@@ -188,9 +201,16 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 		Attrs:         parseArgs(args),
 	}
 
+	// 结构化旁路：在序列化之前分发（未注册 Hook 时无任何开销）
+	if hs := l.hooks.Load(); hs != nil {
+		for _, h := range *hs {
+			h(ctx, &rec)
+		}
+	}
+
 	// 复用输出缓冲；锁外完成编码（格式化），锁内只做滚动判断与写入
 	bp := bufPool.Get().(*[]byte)
-	buf := l.enc.appendTo((*bp)[:0], &e)
+	buf := l.enc.appendTo((*bp)[:0], &rec)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()

@@ -100,6 +100,9 @@ func TestLogJSONFormat_AllTraceFields(t *testing.T) {
 	if !strings.Contains(out, `"severity_text":"INFO"`) {
 		t.Errorf("expected severity_text in JSON, got %q", out)
 	}
+	if !strings.Contains(out, `"severity_number":9`) {
+		t.Errorf("expected severity_number 9 (OTel SeverityInfo) in JSON, got %q", out)
+	}
 	if !strings.Contains(out, `"code.filepath"`) || !strings.Contains(out, `"code.lineno"`) {
 		t.Errorf("expected code.filepath/code.lineno in JSON, got %q", out)
 	}
@@ -223,7 +226,7 @@ func TestJSONFormatWithResource(t *testing.T) {
 	l := &Logger{
 		cfg: Config{Level: DEBUG, Format: JSONFormat},
 		enc: jsonEncoder{},
-		res: resource{
+		res: Resource{
 			ServiceName:    "user-api",
 			ServiceVersion: "1.2.0",
 			Environment:    "prod",
@@ -322,6 +325,51 @@ func TestPackageLevelPrint(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "pkg print") || !strings.Contains(out, "pkg printf 1") {
 		t.Errorf("package-level Print/Printf should route to default logger: %q", out)
+	}
+}
+
+func TestHookReceivesRecord(t *testing.T) {
+	// Hook 在序列化前收到结构化 Record，且不影响落盘输出
+	l, buf := newTestLogger(DEBUG)
+
+	var got *Record
+	l.AddHook(func(ctx context.Context, r *Record) {
+		got = r
+	})
+
+	ctx := context.WithValue(context.Background(), RootTraceIDKey, "r1")
+	ctx = context.WithValue(ctx, CurrentSpanIDKey, "s1")
+	l.Info(ctx, "hook test", "user_id", 123)
+
+	if got == nil {
+		t.Fatal("hook should receive a record")
+	}
+	if got.Body != "hook test" || got.Level != INFO {
+		t.Errorf("record body/level mismatch: %+v", got)
+	}
+	if got.TraceID != "r1" || got.SpanID != "s1" {
+		t.Errorf("record trace fields mismatch: %+v", got)
+	}
+	if len(got.Attrs) != 1 || got.Attrs[0].Key != "user_id" || got.Attrs[0].Value != 123 {
+		t.Errorf("record attrs mismatch: %+v", got.Attrs)
+	}
+	if got.Timestamp.IsZero() {
+		t.Error("record timestamp should be set")
+	}
+
+	// 落盘输出不受 Hook 影响
+	if !strings.Contains(buf.String(), "hook test user_id=123") {
+		t.Errorf("disk output should be unaffected by hook: %q", buf.String())
+	}
+}
+
+func TestAddHookNilSafe(t *testing.T) {
+	// 未注册 Hook 时不应 panic，且输出正常
+	l, buf := newTestLogger(DEBUG)
+	l.AddHook(nil)
+	l.Info(context.Background(), "no hook")
+	if !strings.Contains(buf.String(), "no hook") {
+		t.Errorf("output should be normal without hooks: %q", buf.String())
 	}
 }
 

@@ -6,7 +6,13 @@ import (
 	"math"
 	"strconv"
 	"sync"
+
+	"github.com/memory198/go-gear/logger/core"
 )
+
+// timeLayout 日志时间格式：RFC3339 + 微秒 + 时区偏移
+// 例：2026-09-21T10:30:00.123456+08:00（标准、可辨时区、精度足够）
+const timeLayout = "2006-01-02T15:04:05.000000Z07:00"
 
 // bufPool 复用日志输出缓冲，避免每行日志重复分配
 var bufPool = sync.Pool{
@@ -16,38 +22,38 @@ var bufPool = sync.Pool{
 	},
 }
 
-// encoder 日志编码器：将 entry 序列化后追加到 dst 并返回新切片
+// encoder 日志编码器：将 Record 序列化后追加到 dst 并返回新切片
 type encoder interface {
-	appendTo(dst []byte, e *entry) []byte
+	appendTo(dst []byte, r *core.Record) []byte
 }
 
 // ---- text 编码器（人读优先，省略 resource / parent_span_ids） ----
 
 type textEncoder struct{}
 
-func (textEncoder) appendTo(b []byte, e *entry) []byte {
-	b = append(b, e.Timestamp...)
+func (textEncoder) appendTo(b []byte, r *core.Record) []byte {
+	b = append(b, r.Timestamp.Format(timeLayout)...)
 	b = append(b, " ["...)
-	b = append(b, e.SeverityText...)
+	b = append(b, r.Level.String()...)
 	b = append(b, ']')
-	if e.TraceID != "" {
+	if r.TraceID != "" {
 		b = append(b, " ["...)
-		b = append(b, e.TraceID...)
+		b = append(b, r.TraceID...)
 		b = append(b, ']')
 	}
-	if e.CodeFilepath != "" {
+	if r.CodeFilepath != "" {
 		b = append(b, ' ')
-		b = append(b, e.CodeFilepath...)
+		b = append(b, r.CodeFilepath...)
 		b = append(b, ':')
-		b = strconv.AppendInt(b, int64(e.CodeLineno), 10)
+		b = strconv.AppendInt(b, int64(r.CodeLineno), 10)
 	}
 	b = append(b, ' ')
-	b = append(b, e.Body...)
-	for _, f := range e.Attrs {
+	b = append(b, r.Body...)
+	for _, a := range r.Attrs {
 		b = append(b, ' ')
-		b = append(b, f.key...)
+		b = append(b, a.Key...)
 		b = append(b, '=')
-		b = appendTextValue(b, f.value)
+		b = appendTextValue(b, a.Value)
 	}
 	return append(b, '\n')
 }
@@ -103,7 +109,7 @@ type jsonEncoder struct{}
 
 const hexDigits = "0123456789abcdef"
 
-func (jsonEncoder) appendTo(b []byte, e *entry) []byte {
+func (jsonEncoder) appendTo(b []byte, r *core.Record) []byte {
 	b = append(b, '{')
 	first := true
 
@@ -119,30 +125,32 @@ func (jsonEncoder) appendTo(b []byte, e *entry) []byte {
 	}
 
 	key("timestamp")
-	b = appendJSONString(b, e.Timestamp)
+	b = appendJSONString(b, r.Timestamp.Format(timeLayout))
+	key("severity_number")
+	b = strconv.AppendInt(b, int64(r.Level), 10)
 	key("severity_text")
-	b = appendJSONString(b, e.SeverityText)
+	b = appendJSONString(b, r.Level.String())
 	key("body")
-	b = appendJSONString(b, e.Body)
+	b = appendJSONString(b, r.Body)
 
-	if e.CodeFilepath != "" {
+	if r.CodeFilepath != "" {
 		key("code.filepath")
-		b = appendJSONString(b, e.CodeFilepath)
+		b = appendJSONString(b, r.CodeFilepath)
 		key("code.lineno")
-		b = strconv.AppendInt(b, int64(e.CodeLineno), 10)
+		b = strconv.AppendInt(b, int64(r.CodeLineno), 10)
 	}
-	if e.TraceID != "" {
+	if r.TraceID != "" {
 		key("trace_id")
-		b = appendJSONString(b, e.TraceID)
+		b = appendJSONString(b, r.TraceID)
 	}
-	if e.SpanID != "" {
+	if r.SpanID != "" {
 		key("span_id")
-		b = appendJSONString(b, e.SpanID)
+		b = appendJSONString(b, r.SpanID)
 	}
-	if len(e.ParentSpanIDs) > 0 {
+	if len(r.ParentSpanIDs) > 0 {
 		key("parent_span_ids")
 		b = append(b, '[')
-		for i, id := range e.ParentSpanIDs {
+		for i, id := range r.ParentSpanIDs {
 			if i > 0 {
 				b = append(b, ',')
 			}
@@ -150,7 +158,7 @@ func (jsonEncoder) appendTo(b []byte, e *entry) []byte {
 		}
 		b = append(b, ']')
 	}
-	if !e.Resource.empty() {
+	if !r.Resource.Empty() {
 		key("resource")
 		b = append(b, '{')
 		rf := true
@@ -163,34 +171,34 @@ func (jsonEncoder) appendTo(b []byte, e *entry) []byte {
 			b = appendJSONString(b, k)
 			b = append(b, ':')
 		}
-		if e.Resource.ServiceName != "" {
+		if r.Resource.ServiceName != "" {
 			rkey("service.name")
-			b = appendJSONString(b, e.Resource.ServiceName)
+			b = appendJSONString(b, r.Resource.ServiceName)
 		}
-		if e.Resource.ServiceVersion != "" {
+		if r.Resource.ServiceVersion != "" {
 			rkey("service.version")
-			b = appendJSONString(b, e.Resource.ServiceVersion)
+			b = appendJSONString(b, r.Resource.ServiceVersion)
 		}
-		if e.Resource.Environment != "" {
+		if r.Resource.Environment != "" {
 			rkey("deployment.environment")
-			b = appendJSONString(b, e.Resource.Environment)
+			b = appendJSONString(b, r.Resource.Environment)
 		}
-		if e.Resource.HostName != "" {
+		if r.Resource.HostName != "" {
 			rkey("host.name")
-			b = appendJSONString(b, e.Resource.HostName)
+			b = appendJSONString(b, r.Resource.HostName)
 		}
 		b = append(b, '}')
 	}
-	if len(e.Attrs) > 0 {
+	if len(r.Attrs) > 0 {
 		key("attributes")
 		b = append(b, '{')
-		for i, f := range e.Attrs {
+		for i, a := range r.Attrs {
 			if i > 0 {
 				b = append(b, ',')
 			}
-			b = appendJSONString(b, f.key)
+			b = appendJSONString(b, a.Key)
 			b = append(b, ':')
-			b = appendJSONValue(b, f.value)
+			b = appendJSONValue(b, a.Value)
 		}
 		b = append(b, '}')
 	}
