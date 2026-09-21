@@ -228,17 +228,18 @@ OTel 中间件挂上后，logger 输出自动包含 trace 链路字段：
 **text 格式**：
 
 ```
-2026-07-14 10:30:00.123456 [INFO] [4bf92f3577b34da6a3ce929d0e0e4736] handler/user.go:42 creating user
+2026-09-21T10:30:00.123456+08:00 [INFO] [4bf92f3577b34da6a3ce929d0e0e4736] handler/user.go:42 creating user
 ```
 
 **json 格式**：
 
 ```json
-{"time":"...","level":"INFO","msg":"creating user","caller":"handler/user.go:42",
- "root_trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","current_span_id":"00f067aa0ba902b7"}
+{"timestamp":"2026-09-21T10:30:00.123456+08:00","severity_text":"INFO","body":"creating user",
+ "code.filepath":"handler/user.go","code.lineno":42,
+ "trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}
 ```
 
-通过 `root_trace_id` 即可在 Jaeger 等平台精确定位整条请求链路的所有日志。
+通过 `trace_id` 即可在 Jaeger 等平台精确定位整条请求链路的所有日志。
 
 ---
 

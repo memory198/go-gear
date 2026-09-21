@@ -34,6 +34,15 @@ type LogConfig struct {
 	Filename string `yaml:"filename"` // 日志文件名（不含扩展名），空则取程序名
 	MaxAge   int    `yaml:"max_age"`  // 日志保留天数，<=0 不清理
 	Caller   bool   `yaml:"caller"`   // 是否输出调用位置（单行 file:line）
+
+	// parent_span_ids 是否输出中间 span 链（默认关闭，开启有聚合开销）
+	ParentSpanIDs bool `yaml:"parent_span_ids"`
+
+	// resource 元信息（写入日志的 resource 对象）
+	Service string `yaml:"service"` // service.name
+	Version string `yaml:"version"` // service.version
+	Env     string `yaml:"env"`     // deployment.environment
+	Host    string `yaml:"host"`    // host.name（空则取本机主机名）
 }
 
 // defaultConfig 默认配置
@@ -163,5 +172,20 @@ func overrideFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("APP_LOG_CALLER"); v == "true" {
 		cfg.Log.Caller = true
+	}
+	if v := os.Getenv("APP_LOG_PARENT_SPAN_IDS"); v == "true" {
+		cfg.Log.ParentSpanIDs = true
+	}
+	if v := os.Getenv("APP_LOG_SERVICE"); v != "" {
+		cfg.Log.Service = v
+	}
+	if v := os.Getenv("APP_LOG_VERSION"); v != "" {
+		cfg.Log.Version = v
+	}
+	if v := os.Getenv("APP_LOG_ENV"); v != "" {
+		cfg.Log.Env = v
+	}
+	if v := os.Getenv("APP_LOG_HOST"); v != "" {
+		cfg.Log.Host = v
 	}
 }

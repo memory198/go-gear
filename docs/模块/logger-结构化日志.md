@@ -43,10 +43,14 @@ logger.Printf("listening on %s:%d", "0.0.0.0", 8080)
 
 数据由 gctx 或 middleware.OTel 动态提供（见 [架构设计 §五](../架构设计.md)）。
 
-### 4. 双编码器（`encoder` 接口）
+**输出字段映射**：`RootTraceIDKey` → `trace_id`；`CurrentSpanIDKey` → `span_id`；`MiddleSpanIDsKey` → `parent_span_ids`（默认关闭，需 `Config.ParentSpanIDs` 开启）。
 
-- `textEncoder`：只展示 root_trace_id，控制人读噪音
-- `jsonEncoder`：完整携带三元组，`middle_span_ids` 为数组（`{"time","level","msg","caller","root_trace_id","middle_span_ids","current_span_id"}`）
+### 4. 双编码器（手写实现，性能优于反射序列化）
+
+- `textEncoder`：人读优先，展示 `timestamp [severity_text] [trace_id] code.filepath:lineno body` 与 `k=v` 属性；省略 resource / parent_span_ids
+- `jsonEncoder`：**手写 JSON 编码器**（无反射），字段对齐 OTel：
+  `timestamp` / `severity_text` / `body` / `code.filepath` / `code.lineno` / `trace_id` / `span_id` / `parent_span_ids` / `resource{...}` / `attributes{...}`
+- 输出缓冲通过 `sync.Pool` 复用，默认路径仅 3-4 次分配/条
 
 ### 5. 输出管理
 
@@ -60,7 +64,7 @@ logger.Printf("listening on %s:%d", "0.0.0.0", 8080)
 
 ## 配置项（`Config`）
 
-`Level` / `Format`(text|json) / `Console` / `FileDir` / `Filename` / `MaxAge` / `Caller`(bool) / `MiddleSpanIDs`(bool，默认 false)
+`Level` / `Format`(text|json) / `Console` / `FileDir` / `Filename` / `MaxAge` / `Caller`(bool) / `ParentSpanIDs`(bool，默认 false) / `Service` / `Version` / `Env` / `Host`(resource 元信息)
 
 ## 与其他模块的关系
 

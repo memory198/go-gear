@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+// timeLayout 日志时间格式：RFC3339 + 微秒 + 时区偏移
+// 例：2026-09-21T10:30:00.123456+08:00（标准、可辨时区、精度足够）
+const timeLayout = "2006-01-02T15:04:05.000000Z07:00"
+
 // Config 日志配置
 type Config struct {
 	Level         Level  // 最低输出等级
@@ -21,7 +25,13 @@ type Config struct {
 	Filename      string // 文件名（不含扩展名），空则取程序名
 	MaxAge        int    // 日志保留天数，<=0 不清理
 	Caller        bool   // 是否记录一行调用位置（直接调用者，内部有缓存，非调用栈）
-	MiddleSpanIDs bool   // 是否输出中间 span ID 链（默认关闭；开启需读取 gctx 聚合，有开销）
+	ParentSpanIDs bool   // 是否输出 parent_span_ids（中间 span 链；默认关闭，开启需读取 gctx 聚合）
+
+	// resource 元信息（写入日志的 resource 对象；留空则不输出对应键）
+	Service string // service.name
+	Version string // service.version
+	Env     string // deployment.environment
+	Host    string // host.name（空则尝试取 os.Hostname）
 }
 
 // Logger 日志实例
@@ -32,6 +42,7 @@ type Logger struct {
 	writers    []io.Writer // 输出目标列表（stdout + 文件可同时存在）
 	currentDay string      // 当前日志文件所属日期，用于判断是否需要滚动
 	file       *os.File    // 当前打开的日志文件句柄，仅文件输出时非 nil
+	res        resource    // resource 元信息（构造时确定，避免每行重复计算）
 }
 
 // New 创建 Logger
@@ -44,6 +55,17 @@ func New(cfg Config) (*Logger, error) {
 		l.enc = jsonEncoder{}
 	default:
 		l.enc = textEncoder{}
+	}
+
+	// resource 在构造时确定（host 缺省取本机主机名）
+	l.res = resource{
+		ServiceName:    cfg.Service,
+		ServiceVersion: cfg.Version,
+		Environment:    cfg.Env,
+		HostName:       cfg.Host,
+	}
+	if l.res.HostName == "" {
+		l.res.HostName, _ = os.Hostname()
 	}
 
 	if err := l.openWriters(); err != nil {
@@ -145,25 +167,30 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 	}
 
 	now := time.Now()
-	ti := traceFromCtx(ctx, l.cfg.MiddleSpanIDs)
+	ti := traceFromCtx(ctx, l.cfg.ParentSpanIDs)
 
-	var caller string
+	var file string
+	var lineno int
 	if l.cfg.Caller {
-		caller = findCaller()
+		file, lineno = findCaller()
 	}
 
-	e := &entry{
-		Time:          now.Format("2006-01-02 15:04:05.000000"),
-		Level:         levelNames[level],
-		Msg:           msg,
-		Caller:        caller,
-		RootTraceID:   ti.RootTraceID,
-		MiddleSpanIDs: ti.MiddleSpanIDs,
-		CurrentSpanID: ti.CurrentSpanID,
-		fields:        parseArgs(args),
+	e := entry{
+		Timestamp:     now.Format(timeLayout),
+		SeverityText:  levelNames[level],
+		Body:          msg,
+		CodeFilepath:  file,
+		CodeLineno:    lineno,
+		TraceID:       ti.RootTraceID,
+		SpanID:        ti.CurrentSpanID,
+		ParentSpanIDs: ti.MiddleSpanIDs,
+		Resource:      l.res,
+		Attrs:         parseArgs(args),
 	}
 
-	output := l.enc.encode(e)
+	// 复用输出缓冲；锁外完成编码（格式化），锁内只做滚动判断与写入
+	bp := bufPool.Get().(*[]byte)
+	buf := l.enc.appendTo((*bp)[:0], &e)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -176,8 +203,12 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 	}
 
 	for _, w := range l.writers {
-		_, _ = fmt.Fprint(w, output)
+		_, _ = w.Write(buf)
 	}
+
+	// 归还缓冲
+	*bp = buf
+	bufPool.Put(bp)
 }
 
 // Close 关闭日志文件
@@ -190,11 +221,17 @@ func (l *Logger) Close() error {
 	return nil
 }
 
+// callerInfo 调用位置（文件与行号）
+type callerInfo struct {
+	file   string
+	lineno int
+}
+
 // caller 收集缓存：避免每行日志重复做昂贵的栈解析
 var (
-	// callerCache 以首个业务帧的 pc 为 key，缓存其 "file:line"
+	// callerCache 以首个业务帧的 pc 为 key，缓存其调用位置
 	// 同一行代码重复打日志时直接命中，跳过栈解析
-	callerCache sync.Map // map[uintptr]string
+	callerCache sync.Map // map[uintptr]*callerInfo
 	cwdOnce     sync.Once
 	cwdValue    string
 )
@@ -205,9 +242,9 @@ func callerCwd() string {
 	return cwdValue
 }
 
-// findCaller 向上找到第一个不属于 logger 包和运行时的调用位置，返回 "相对路径:行号"
-// 仅取一行（直接调用者），不打印调用栈；同一位置二次调用命中缓存
-func findCaller() string {
+// findCaller 向上找到第一个不属于 logger 包和运行时的调用位置
+// 返回相对路径与行号（仅直接调用者，非调用栈）；同一位置二次调用命中缓存
+func findCaller() (string, int) {
 	// 栈数组而非堆分配；16 帧足够覆盖 logger 内部 2-3 帧 + 业务调用链
 	var pcs [16]uintptr
 	n := runtime.Callers(1, pcs[:])
@@ -226,14 +263,15 @@ func findCaller() string {
 		}
 		// 缓存命中：同一日志点直接复用
 		if cached, ok := callerCache.Load(pc); ok {
-			return cached.(string)
+			ci := cached.(*callerInfo)
+			return ci.file, ci.lineno
 		}
 		file, line := fn.FileLine(pc)
-		pos := fmt.Sprintf("%s:%d", relativeFile(file), line)
-		callerCache.LoadOrStore(pc, pos)
-		return pos
+		ci := &callerInfo{file: relativeFile(file), lineno: line}
+		callerCache.Store(pc, ci)
+		return ci.file, ci.lineno
 	}
-	return ""
+	return "", 0
 }
 
 // relativeFile 将绝对路径转为相对于当前工作目录的路径

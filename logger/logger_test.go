@@ -50,7 +50,7 @@ func TestLogFormat_NoTraceIDs(t *testing.T) {
 	l.Info(context.Background(), "hello world")
 
 	out := buf.String()
-	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} \[INFO\] .+:\d+ hello world\n$`)
+	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2} \[INFO\] .+:\d+ hello world\n$`)
 	if !re.MatchString(out) {
 		t.Errorf("output format mismatch: %q", out)
 	}
@@ -62,8 +62,8 @@ func TestLogFormat_WithRootTraceID(t *testing.T) {
 	l.Info(ctx, "hello")
 
 	out := buf.String()
-	// text 格式仅展示 root_trace_id，caller 用中括号包裹
-	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} \[INFO\] \[root-1\] .+:\d+ hello\n$`)
+	// text 格式仅展示 trace_id，caller 用中括号包裹
+	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2} \[INFO\] \[root-1\] .+:\d+ hello\n$`)
 	if !re.MatchString(out) {
 		t.Errorf("output format mismatch: %q", out)
 	}
@@ -72,7 +72,7 @@ func TestLogFormat_WithRootTraceID(t *testing.T) {
 func TestLogJSONFormat_AllTraceFields(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: true, MiddleSpanIDs: true},
+		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: true, ParentSpanIDs: true},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -85,25 +85,28 @@ func TestLogJSONFormat_AllTraceFields(t *testing.T) {
 	l.Info(ctx, "json test")
 
 	out := buf.String()
-	if !strings.Contains(out, `"root_trace_id":"r"`) {
-		t.Errorf("expected root_trace_id in JSON, got %q", out)
+	if !strings.Contains(out, `"trace_id":"r"`) {
+		t.Errorf("expected trace_id in JSON, got %q", out)
 	}
-	if !strings.Contains(out, `"middle_span_ids":["m1","m2"]`) {
-		t.Errorf("expected middle_span_ids array in JSON, got %q", out)
+	if !strings.Contains(out, `"parent_span_ids":["m1","m2"]`) {
+		t.Errorf("expected parent_span_ids array in JSON, got %q", out)
 	}
-	if !strings.Contains(out, `"current_span_id":"c"`) {
-		t.Errorf("expected current_span_id in JSON, got %q", out)
+	if !strings.Contains(out, `"span_id":"c"`) {
+		t.Errorf("expected span_id in JSON, got %q", out)
 	}
-	if !strings.Contains(out, `"msg":"json test"`) {
-		t.Errorf("expected msg in JSON, got %q", out)
+	if !strings.Contains(out, `"body":"json test"`) {
+		t.Errorf("expected body in JSON, got %q", out)
 	}
-	if !strings.Contains(out, `"level":"INFO"`) {
-		t.Errorf("expected level in JSON, got %q", out)
+	if !strings.Contains(out, `"severity_text":"INFO"`) {
+		t.Errorf("expected severity_text in JSON, got %q", out)
+	}
+	if !strings.Contains(out, `"code.filepath"`) || !strings.Contains(out, `"code.lineno"`) {
+		t.Errorf("expected code.filepath/code.lineno in JSON, got %q", out)
 	}
 }
 
 func TestLogJSONFormat_MiddleSpanIDsDisabledByDefault(t *testing.T) {
-	// 默认（未开启 MiddleSpanIDs）不应输出 middle_span_ids
+	// 默认（未开启 MiddleSpanIDs）不应输出 parent_span_ids
 	buf := &bytes.Buffer{}
 	l := &Logger{
 		cfg:     Config{Level: DEBUG, Format: JSONFormat},
@@ -118,11 +121,11 @@ func TestLogJSONFormat_MiddleSpanIDsDisabledByDefault(t *testing.T) {
 	l.Info(ctx, "no middle span ids")
 
 	out := buf.String()
-	if strings.Contains(out, "middle_span_ids") {
-		t.Errorf("middle_span_ids should be omitted by default: %q", out)
+	if strings.Contains(out, "parent_span_ids") {
+		t.Errorf("parent_span_ids should be omitted by default: %q", out)
 	}
-	if !strings.Contains(out, `"root_trace_id":"r"`) {
-		t.Errorf("root_trace_id should still be present: %q", out)
+	if !strings.Contains(out, `"trace_id":"r"`) {
+		t.Errorf("trace_id should still be present: %q", out)
 	}
 }
 
@@ -135,9 +138,9 @@ func TestLogJSONFormat_NoTraceFields(t *testing.T) {
 	}
 	l.Info(context.Background(), "no trace")
 	out := buf.String()
-	// omitempty 的效果：无 trace 时不输出对应字段
-	if strings.Contains(out, "root_trace_id") {
-		t.Errorf("unexpected root_trace_id in JSON when not set: %q", out)
+	// 无 trace 时不输出对应字段
+	if strings.Contains(out, "trace_id") || strings.Contains(out, "span_id") {
+		t.Errorf("unexpected trace fields in JSON when not set: %q", out)
 	}
 }
 
@@ -189,24 +192,74 @@ func TestJSONFormatWithFields(t *testing.T) {
 	if !strings.Contains(out, `"source":"api"`) {
 		t.Errorf("JSON should include kv field source: %q", out)
 	}
-	if !strings.Contains(out, `"msg":"user created"`) {
-		t.Errorf("JSON should keep msg intact: %q", out)
+	if !strings.Contains(out, `"body":"user created"`) {
+		t.Errorf("JSON should keep body intact: %q", out)
+	}
+	// kv 归入 attributes 对象
+	if !strings.Contains(out, `"attributes":{`) {
+		t.Errorf("kv should be nested under attributes: %q", out)
 	}
 }
 
 func TestJSONFormatWithFieldsReservedKeyIgnored(t *testing.T) {
-	// kv key 与内置字段同名（如 level）应被忽略，不破坏结构
+	// kv key 与内置字段同名（如 severity_text）应被忽略，不破坏结构
 	buf := &bytes.Buffer{}
 	l := &Logger{
 		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: false},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
-	l.Info(context.Background(), "msg", "level", "hacked")
+	l.Info(context.Background(), "msg", "severity_text", "hacked", "body", "hacked2")
 
 	out := buf.String()
-	if strings.Contains(out, `"level":"hacked"`) {
-		t.Errorf("kv should not override reserved field level: %q", out)
+	if strings.Contains(out, "hacked") {
+		t.Errorf("kv should not override reserved fields: %q", out)
+	}
+}
+
+func TestJSONFormatWithResource(t *testing.T) {
+	// resource 元信息嵌套输出（点分键）
+	buf := &bytes.Buffer{}
+	l := &Logger{
+		cfg: Config{Level: DEBUG, Format: JSONFormat},
+		enc: jsonEncoder{},
+		res: resource{
+			ServiceName:    "user-api",
+			ServiceVersion: "1.2.0",
+			Environment:    "prod",
+			HostName:       "node-1",
+		},
+		writers: []io.Writer{buf},
+	}
+	l.Info(context.Background(), "with resource")
+
+	out := buf.String()
+	for _, want := range []string{
+		`"resource":{`, `"service.name":"user-api"`, `"service.version":"1.2.0"`,
+		`"deployment.environment":"prod"`, `"host.name":"node-1"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("resource output missing %s: %q", want, out)
+		}
+	}
+}
+
+func TestJSONFormatEscape(t *testing.T) {
+	// 引号/反斜杠/换行等需要正确转义
+	buf := &bytes.Buffer{}
+	l := &Logger{
+		cfg:     Config{Level: DEBUG, Format: JSONFormat},
+		enc:     jsonEncoder{},
+		writers: []io.Writer{buf},
+	}
+	l.Info(context.Background(), "say \"hi\"\nline2", "path", `C:\tmp\a`)
+
+	out := buf.String()
+	if !strings.Contains(out, `"body":"say \"hi\"\nline2"`) {
+		t.Errorf("body escaping failed: %q", out)
+	}
+	if !strings.Contains(out, `"path":"C:\\tmp\\a"`) {
+		t.Errorf("attribute escaping failed: %q", out)
 	}
 }
 
