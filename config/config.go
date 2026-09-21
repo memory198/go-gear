@@ -54,7 +54,7 @@ func defaultConfig() *Config {
 	}
 }
 
-// Load 加载配置：入口文件 < 环境变量 < 命令行 flag
+// Load 加载配置：默认值（代码兜底） < 配置文件 < 环境变量
 // 入口文件可通过 include 引用其他文件，重复 key 直接 panic
 func Load(configFile string) (*Config, error) {
 	// 1. 解析所有文件，合并为原始 map
