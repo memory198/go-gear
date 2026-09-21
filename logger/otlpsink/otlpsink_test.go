@@ -134,3 +134,30 @@ func TestAttrFromAny(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultTLSEnabled(t *testing.T) {
+	// 安全默认：未显式 WithInsecure 时应启用 TLS
+	if defaultConfig().insecure {
+		t.Error("TLS should be enabled by default (use WithInsecure to opt out)")
+	}
+}
+
+func TestWithResource(t *testing.T) {
+	cfg := defaultConfig()
+	WithResource(core.Resource{
+		ServiceName:    "user-api",
+		ServiceVersion: "1.2.0",
+		Environment:    "prod",
+		HostName:       "node-1",
+	})(cfg)
+
+	if cfg.serviceName != "user-api" || cfg.serviceVer != "1.2.0" ||
+		cfg.environment != "prod" || cfg.hostName != "node-1" {
+		t.Errorf("WithResource not applied: %+v", cfg)
+	}
+}
+
+func TestSinkImplementsFlusher(t *testing.T) {
+	// Sink 需实现 core.Flusher，供 Fatal 退出前刷新
+	var _ core.Flusher = (*Sink)(nil)
+}

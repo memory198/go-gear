@@ -258,16 +258,16 @@ OTel 中间件挂上后，logger 输出自动包含 trace 链路字段：
 ```go
 import "github.com/memory198/go-gear/logger/otlpsink"
 
-l, _ := logger.New(logger.Config{
+cfg := logger.Config{
     Format: logger.JSONFormat, Console: true,
     Service: "user-api", Version: "1.2.0", Env: "prod",   // resource 与 span 保持一致
-})
+}
+l, _ := logger.New(cfg)
 
 sink, shutdown, err := otlpsink.New(ctx,
     otlpsink.WithEndpoint("localhost:4318"),   // Collector 的 OTLP/HTTP 端口
-    otlpsink.WithInsecure(),                   // 本地/内网可关闭 TLS
-    otlpsink.WithService("user-api", "1.2.0"),
-    otlpsink.WithEnvironment("prod"),
+    otlpsink.WithInsecure(),                   // 默认启用 TLS；本地/内网明文需显式开启
+    otlpsink.WithResource(cfg.Resource()),     // 复用 logger 的 resource（避免两处维护）
 )
 if err != nil {
     logger.Print("otlp sink disabled: ", err)  // 导出不可用不影响落盘日志
@@ -277,6 +277,8 @@ if err != nil {
 }
 logger.SetDefault(l)
 ```
+
+> `sink` 同时实现了 `core.Flusher`，因此 `logger.Fatal` 退出前会自动刷新缓冲；正常退出仍建议 `defer shutdown(ctx)`。
 
 ### 说明
 

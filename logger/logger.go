@@ -31,6 +31,10 @@ type Config struct {
 	Version string // service.version
 	Env     string // deployment.environment
 	Host    string // host.name（空则尝试取 os.Hostname）
+
+	// OnError 输出/滚动失败时的回调（可选）
+	// 用于发现磁盘满、句柄失效等问题；回调在写入锁内被调用，应快速返回
+	OnError func(error)
 }
 
 // Logger 日志实例
@@ -58,15 +62,7 @@ func New(cfg Config) (*Logger, error) {
 	}
 
 	// resource 在构造时确定（host 缺省取本机主机名）
-	l.res = Resource{
-		ServiceName:    cfg.Service,
-		ServiceVersion: cfg.Version,
-		Environment:    cfg.Env,
-		HostName:       cfg.Host,
-	}
-	if l.res.HostName == "" {
-		l.res.HostName, _ = os.Hostname()
-	}
+	l.res = cfg.Resource()
 
 	if err := l.openWriters(); err != nil {
 		return nil, err
@@ -74,7 +70,24 @@ func New(cfg Config) (*Logger, error) {
 	return l, nil
 }
 
+// Resource 返回配置对应的 resource（host 缺省取 os.Hostname）
+// 用于与 OTLP 等外部导出保持一致：otlpsink.WithResource(cfg.Resource())
+func (c Config) Resource() Resource {
+	r := Resource{
+		ServiceName:    c.Service,
+		ServiceVersion: c.Version,
+		Environment:    c.Env,
+		HostName:       c.Host,
+	}
+	if r.HostName == "" {
+		r.HostName, _ = os.Hostname()
+	}
+	return r
+}
+
 // NewFromConfig 从配置参数创建
+//
+// Deprecated: 位置参数过多且难扩展，建议使用 New(Config{...})
 func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge int, caller bool) (*Logger, error) {
 	return New(Config{
 		Level:    parseLevel(level),
@@ -169,12 +182,15 @@ func (l *Logger) flushHooks(ctx context.Context) {
 // 面向启动、后台任务等非请求场景：内部使用 context.Background()，
 // 因此不携带 trace 链路字段；请求内日志请使用 Info(ctx, ...) 等带 ctx 方法。
 
-// Print 输出 INFO 级日志，args 为 slog 键值对字段
+// Print 输出 INFO 级日志（log 风格，无 ctx）
+// 参数语义：msg 为消息正文，args 为 slog 键值对字段（与 Info(ctx, msg, kv...) 一致）
+// ⚠️ 不做格式化——需要格式化请用 Printf
 func (l *Logger) Print(msg string, args ...any) {
 	l.log(context.Background(), INFO, msg, args...)
 }
 
 // Printf 格式化输出 INFO 级日志（无 ctx）
+// 参数语义：format + 格式化参数（内部 fmt.Sprintf），与 Print 的 kv 语义不同
 func (l *Logger) Printf(format string, args ...any) {
 	l.log(context.Background(), INFO, fmt.Sprintf(format, args...))
 }
@@ -226,10 +242,10 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 		Attrs:         parseArgs(args),
 	}
 
-	// 结构化旁路：在序列化之前分发（未注册 Hook 时无任何开销）
+	// 结构化旁路：在序列化之前分发（未注册 Emitter 时无任何开销）
 	if hs := l.hooks.Load(); hs != nil {
 		for _, h := range *hs {
-			h.Emit(ctx, &rec)
+			emitSafe(ctx, h, &rec) // 捕获 Hook panic，防止击穿业务日志调用
 		}
 	}
 
@@ -248,12 +264,36 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 	}
 
 	for _, w := range l.writers {
-		_, _ = w.Write(buf)
+		if _, err := w.Write(buf); err != nil {
+			l.reportError(err)
+		}
 	}
 
 	// 归还缓冲
 	*bp = buf
 	bufPool.Put(bp)
+}
+
+// emitSafe 调用 Emitter 并捕获 panic（坏 Hook 不应影响业务日志调用）
+func emitSafe(ctx context.Context, e Emitter, r *Record) {
+	defer func() {
+		if v := recover(); v != nil {
+			fmt.Fprintf(os.Stderr, "logger: emitter panic: %v\n", v)
+		}
+	}()
+	e.Emit(ctx, r)
+}
+
+// reportError 上报内部错误：优先调用 Config.OnError，否则写 stderr
+func (l *Logger) reportError(err error) {
+	if err == nil {
+		return
+	}
+	if l.cfg.OnError != nil {
+		l.cfg.OnError(err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "logger: %v\n", err)
 }
 
 // Close 关闭日志文件
@@ -273,6 +313,7 @@ type callerInfo struct {
 }
 
 // caller 收集缓存：避免每行日志重复做昂贵的栈解析
+// 注：缓存无容量上限，规模受“不同日志调用点数量”约束（通常有限且稳定）
 var (
 	// callerCache 以首个业务帧的 pc 为 key，缓存其调用位置
 	// 同一行代码重复打日志时直接命中，跳过栈解析
@@ -282,6 +323,7 @@ var (
 )
 
 // callerCwd 获取工作目录（仅首次 syscall，后续命中缓存）
+// 注：进程后续 chdir 不会刷新该缓存
 func callerCwd() string {
 	cwdOnce.Do(func() { cwdValue, _ = os.Getwd() })
 	return cwdValue

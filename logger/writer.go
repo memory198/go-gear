@@ -2,10 +2,10 @@ package logger
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -55,7 +55,7 @@ func (l *Logger) rotateFile(today string) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		// 保留旧句柄继续写（不丢日志）；同时更新 currentDay，避免每行重试
-		fmt.Fprintf(os.Stderr, "logger: rotate to %s failed, keep writing current file: %v\n", path, err)
+		l.reportError(fmt.Errorf("rotate to %s failed, keep writing current file: %w", path, err))
 		l.currentDay = today
 		return
 	}
@@ -150,18 +150,25 @@ func isOwnLogFile(name, prefix string) bool {
 	return err == nil
 }
 
+// execNameVar 缓存程序名（os.Executable 仅首次调用）
+var (
+	execNameOnce sync.Once
+	execNameVal  string
+)
+
 // execName 获取程序名（不含路径和扩展名）
 func execName() string {
-	exec, err := os.Executable()
-	if err != nil {
-		return "app"
-	}
-	name := filepath.Base(exec)
-	if ext := filepath.Ext(name); ext != "" {
-		name = name[:len(name)-len(ext)]
-	}
-	return name
+	execNameOnce.Do(func() {
+		exec, err := os.Executable()
+		if err != nil {
+			execNameVal = "app"
+			return
+		}
+		name := filepath.Base(exec)
+		if ext := filepath.Ext(name); ext != "" {
+			name = name[:len(name)-len(ext)]
+		}
+		execNameVal = name
+	})
+	return execNameVal
 }
-
-// 确保编译时检查不必要的导入
-var _ io.Writer = os.Stdout

@@ -3,6 +3,7 @@ package logger
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"regexp"
 	"strings"
@@ -419,6 +420,54 @@ func TestSetDefaultNilIgnored(t *testing.T) {
 		t.Fatal("default logger should not become nil")
 	}
 	Info(context.Background(), "still works")
+}
+
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+type panicEmitter struct{}
+
+func (panicEmitter) Emit(context.Context, *Record) { panic("boom") }
+
+func TestEmitterPanicRecovered(t *testing.T) {
+	// 坏 Emitter panic 不应影响日志输出
+	l, buf := newTestLogger(DEBUG)
+	l.AddHook(panicEmitter{})
+	l.Info(context.Background(), "after panic")
+
+	if !strings.Contains(buf.String(), "after panic") {
+		t.Errorf("log should still be written after emitter panic: %q", buf.String())
+	}
+}
+
+func TestOnErrorCallback(t *testing.T) {
+	// 写入失败应触发 Config.OnError
+	var got error
+	l := &Logger{
+		cfg:     Config{Level: DEBUG, OnError: func(err error) { got = err }},
+		enc:     textEncoder{},
+		writers: []io.Writer{failWriter{}},
+	}
+	l.Info(context.Background(), "x")
+
+	if got == nil {
+		t.Error("OnError should be called on write failure")
+	}
+}
+
+func TestTextEscapesNewlines(t *testing.T) {
+	// text 输出应保持“一行一条”：正文/属性中的换行被转义
+	l, buf := newTestLogger(DEBUG)
+	l.Info(context.Background(), "line1\nline2", "k", "v1\nv2")
+
+	out := buf.String()
+	if strings.Count(out, "\n") != 1 {
+		t.Errorf("text output should contain exactly one newline, got %q", out)
+	}
+	if !strings.Contains(out, `line1\nline2`) || !strings.Contains(out, `k=v1\nv2`) {
+		t.Errorf("newlines in body/attrs should be escaped: %q", out)
+	}
 }
 
 func TestConcurrentWrites(t *testing.T) {

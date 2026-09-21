@@ -51,6 +51,7 @@ var reservedKeys = map[string]bool{
 // parseArgs 将 kv args 解析为有序属性列表（slog 语义）
 // key 必须为非空 string，否则记为 !BADKEY；奇数个参数时末尾裸值记为 !BADKEY
 // 与内置字段重名的 kv 直接丢弃
+// 注意：重复 key 不做去重（与 slog/zap 一致），消费端通常以后一个值为准
 func parseArgs(args []any) []Attr {
 	if len(args) == 0 {
 		return nil

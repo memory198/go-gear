@@ -45,7 +45,7 @@ func WithEndpoint(addr string) Option {
 	return func(c *config) { c.endpoint = addr }
 }
 
-// WithInsecure 关闭 TLS（本地/内网 Collector 常用）
+// WithInsecure 关闭 TLS（本地/内网 Collector 使用；默认开启 TLS）
 func WithInsecure() Option {
 	return func(c *config) { c.insecure = true }
 }
@@ -60,6 +60,25 @@ func WithService(name, version string) Option {
 	return func(c *config) {
 		c.serviceName = name
 		c.serviceVer = version
+	}
+}
+
+// WithResource 直接用 logger 的 resource 配置（避免与 logger.Config 重复维护）
+// 用法：otlpsink.WithResource(cfg.Resource())
+func WithResource(r core.Resource) Option {
+	return func(c *config) {
+		if r.ServiceName != "" {
+			c.serviceName = r.ServiceName
+		}
+		if r.ServiceVersion != "" {
+			c.serviceVer = r.ServiceVersion
+		}
+		if r.Environment != "" {
+			c.environment = r.Environment
+		}
+		if r.HostName != "" {
+			c.hostName = r.HostName
+		}
 	}
 }
 
@@ -78,6 +97,14 @@ func WithBatchInterval(d time.Duration) Option {
 	return func(c *config) { c.batchInterval = d }
 }
 
+// defaultConfig 默认配置：默认启用 TLS（需明文时用 WithInsecure 显式关闭）
+func defaultConfig() *config {
+	return &config{
+		endpoint:      defaultEndpoint,
+		batchInterval: defaultBatchInterval,
+	}
+}
+
 // Sink OTLP 日志导出器，实现 core.Hook（并实现 core.Flusher）
 type Sink struct {
 	provider *sdklog.LoggerProvider
@@ -87,11 +114,7 @@ type Sink struct {
 // New 创建 Sink 并返回关闭函数
 // 关闭函数用于进程退出前刷新缓冲（必须调用，否则最后一批日志可能丢失）
 func New(ctx context.Context, opts ...Option) (*Sink, func(context.Context) error, error) {
-	cfg := &config{
-		endpoint:      defaultEndpoint,
-		insecure:      true,
-		batchInterval: defaultBatchInterval,
-	}
+	cfg := defaultConfig()
 	for _, o := range opts {
 		o(cfg)
 	}
@@ -167,6 +190,7 @@ func contextWithTraceIDs(ctx context.Context, traceIDHex, spanIDHex string) cont
 	if sid, err := trace.SpanIDFromHex(spanIDHex); err == nil {
 		cfg.SpanID = sid
 	}
+	// 说明：日志已实际采集，故标记为 sampled（避免后端因未采样而丢弃）
 	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(cfg))
 }
 

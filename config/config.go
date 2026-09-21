@@ -27,7 +27,7 @@ type DatabaseConfig struct {
 }
 
 type LogConfig struct {
-	Level    string `yaml:"level"`    // trace / debug / info / warn / error / fatal
+	Level    string `yaml:"level"`    // debug / info / warn / error / fatal（默认 info）
 	Format   string `yaml:"format"`   // text / json，默认 text
 	Console  bool   `yaml:"console"`  // 是否输出到控制台
 	Dir      string `yaml:"dir"`      // 日志目录，空则不写文件

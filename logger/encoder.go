@@ -15,6 +15,7 @@ import (
 const timeLayout = "2006-01-02T15:04:05.000000Z07:00"
 
 // bufPool 复用日志输出缓冲，避免每行日志重复分配
+// 注：池中缓冲保留历史最大容量（超大日志会使缓冲长期驻留）
 var bufPool = sync.Pool{
 	New: func() any {
 		b := make([]byte, 0, 512)
@@ -48,14 +49,29 @@ func (textEncoder) appendTo(b []byte, r *core.Record) []byte {
 		b = strconv.AppendInt(b, int64(r.CodeLineno), 10)
 	}
 	b = append(b, ' ')
-	b = append(b, r.Body...)
+	b = appendTextEscaped(b, r.Body)
 	for _, a := range r.Attrs {
 		b = append(b, ' ')
-		b = append(b, a.Key...)
+		b = appendTextEscaped(b, a.Key)
 		b = append(b, '=')
 		b = appendTextValue(b, a.Value)
 	}
 	return append(b, '\n')
+}
+
+// appendTextEscaped 追加文本并转义换行/回车（保证“一行一条”）
+func appendTextEscaped(b []byte, s string) []byte {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\n':
+			b = append(b, '\\', 'n')
+		case '\r':
+			b = append(b, '\\', 'r')
+		default:
+			b = append(b, s[i])
+		}
+	}
+	return b
 }
 
 // appendTextValue 追加文本形式的值（等价 fmt.Sprint 的常用类型快路径）
@@ -64,7 +80,7 @@ func appendTextValue(b []byte, v any) []byte {
 	case nil:
 		return append(b, "<nil>"...)
 	case string:
-		return append(b, x...)
+		return appendTextEscaped(b, x)
 	case bool:
 		if x {
 			return append(b, "true"...)
@@ -95,11 +111,11 @@ func appendTextValue(b []byte, v any) []byte {
 	case float64:
 		return strconv.AppendFloat(b, x, 'g', -1, 64)
 	case error:
-		return append(b, x.Error()...)
+		return appendTextEscaped(b, x.Error())
 	case []byte:
-		return append(b, x...)
+		return appendTextEscaped(b, string(x))
 	default:
-		return append(b, fmt.Sprint(x)...) // 复杂值兜底
+		return appendTextEscaped(b, fmt.Sprint(x)) // 复杂值兜底
 	}
 }
 
