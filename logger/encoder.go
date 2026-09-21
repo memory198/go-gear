@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/memory198/go-gear/logger/core"
@@ -60,7 +61,11 @@ func (textEncoder) appendTo(b []byte, r *core.Record) []byte {
 }
 
 // appendTextEscaped 追加文本并转义换行/回车（保证“一行一条”）
+// 绝大多数日志无换行，先走快速路径（IndexByte），避免逐字节循环开销
 func appendTextEscaped(b []byte, s string) []byte {
+	if strings.IndexByte(s, '\n') < 0 && strings.IndexByte(s, '\r') < 0 {
+		return append(b, s...)
+	}
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
 		case '\n':
