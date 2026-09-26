@@ -1,7 +1,7 @@
 # logger 使用指南
 
 > 本文面向**使用者**，只讲"怎么用好"，不涉及内部实现。
-> 设计原理与包结构见 [logger-结构化日志](logger-结构化日志.md)。
+> 设计原理与包结构见 [logger-结构化日志](../docs/模块/logger-结构化日志.md)。
 
 ## 一、快速开始
 
@@ -275,7 +275,7 @@ logger.SetDefault(l)
 
 - 落盘输出不受影响（OTLP 是旁路）
 - `logger.Fatal` 退出前会自动刷新缓冲；正常退出请 `defer shutdown(ctx)`
-- 完整接入步骤见 [OTel接入指南](../OTel接入指南.md)
+- 完整接入步骤见 [OTel接入指南](../docs/OTel接入指南.md)
 
 ## 十一、常见场景
 
@@ -340,7 +340,7 @@ func worker() {
 
 ## 相关文档
 
-- [logger-结构化日志](logger-结构化日志.md)：模块设计与包结构（进阶）
-- [使用指南](../使用指南.md)：一、Logger（快速上手）
-- [OTel接入指南](../OTel接入指南.md)：日志 OTLP 导出与 trace 关联
-- [gctx-请求上下文](gctx-请求上下文.md)：trace/span 的来源与用法
+- [logger-结构化日志](../docs/模块/logger-结构化日志.md)：模块设计与包结构（进阶）
+- [使用指南](../docs/使用指南.md)：一、Logger（快速上手）
+- [OTel接入指南](../docs/OTel接入指南.md)：日志 OTLP 导出与 trace 关联
+- [gctx-请求上下文](../docs/模块/gctx-请求上下文.md)：trace/span 的来源与用法
