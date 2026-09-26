@@ -39,13 +39,16 @@ func TestSinkEmitsOTLP(t *testing.T) {
 	defer srv.Close()
 
 	endpoint := strings.TrimPrefix(srv.URL, "http://")
-	sink, shutdown, err := New(context.Background(),
-		WithEndpoint(endpoint),
-		WithInsecure(),
-		WithBatchInterval(20*time.Millisecond),
-		WithService("user-api", "1.2.0"),
-		WithEnvironment("prod"),
-	)
+	sink, shutdown, err := New(context.Background(), Config{
+		Endpoint:      endpoint,
+		Insecure:      true,
+		BatchInterval: 20 * time.Millisecond,
+		Resource: core.Resource{
+			ServiceName:    "user-api",
+			ServiceVersion: "1.2.0",
+			Environment:    "prod",
+		},
+	})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
@@ -135,26 +138,42 @@ func TestAttrFromAny(t *testing.T) {
 	}
 }
 
-func TestDefaultTLSEnabled(t *testing.T) {
-	// 安全默认：未显式 WithInsecure 时应启用 TLS
-	if defaultConfig().insecure {
-		t.Error("TLS should be enabled by default (use WithInsecure to opt out)")
+func TestDefaultConfig(t *testing.T) {
+	// 安全默认：TLS 开启；Endpoint/BatchInterval 有默认值
+	cfg := DefaultConfig()
+	if cfg.Insecure {
+		t.Error("TLS should be enabled by default (set Insecure explicitly to opt out)")
+	}
+	if cfg.Endpoint == "" {
+		t.Error("default endpoint should be set")
+	}
+	if cfg.BatchInterval <= 0 {
+		t.Error("default batch interval should be set")
 	}
 }
 
-func TestWithResource(t *testing.T) {
-	cfg := defaultConfig()
-	WithResource(core.Resource{
-		ServiceName:    "user-api",
-		ServiceVersion: "1.2.0",
-		Environment:    "prod",
-		HostName:       "node-1",
-	})(cfg)
-
-	if cfg.serviceName != "user-api" || cfg.serviceVer != "1.2.0" ||
-		cfg.environment != "prod" || cfg.hostName != "node-1" {
-		t.Errorf("WithResource not applied: %+v", cfg)
+func TestNewZeroValueConfig(t *testing.T) {
+	// 零值配置应兜底默认值并成功创建（exporter 不会立即连接）
+	sink, shutdown, err := New(context.Background(), Config{})
+	if err != nil {
+		t.Fatalf("New() with zero config failed: %v", err)
 	}
+	if sink == nil {
+		t.Fatal("sink should not be nil")
+	}
+	_ = shutdown(context.Background())
+}
+
+func TestNewWithPartialResource(t *testing.T) {
+	// 部分填写的 Resource 不影响创建
+	_, shutdown, err := New(context.Background(), Config{
+		Endpoint: "localhost:4318",
+		Resource: core.Resource{ServiceName: "user-api"},
+	})
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	_ = shutdown(context.Background())
 }
 
 func TestSinkImplementsFlusher(t *testing.T) {

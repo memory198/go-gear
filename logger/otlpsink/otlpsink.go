@@ -25,106 +25,51 @@ const (
 	defaultBatchInterval = 5 * time.Second
 )
 
-// config Sink 配置
-type config struct {
-	endpoint      string
-	insecure      bool
-	headers       map[string]string
-	serviceName   string
-	serviceVer    string
-	environment   string
-	hostName      string
-	batchInterval time.Duration
+// Config OTLP 导出配置（直接构造传入，零值字段使用默认值）
+type Config struct {
+	// Endpoint Collector 的 OTLP/HTTP 地址（host:port）；默认 localhost:4318
+	Endpoint string
+	// Insecure 关闭 TLS（默认启用 TLS）；本地/内网明文传输需显式设为 true
+	Insecure bool
+	// Headers 额外的请求头（如鉴权 token）
+	Headers map[string]string
+	// BatchInterval 批量导出间隔；<=0 使用默认 5s
+	BatchInterval time.Duration
+	// Resource 服务元信息，建议与 logger 保持一致：
+	//   ocfg.Resource = loggerCfg.Resource()
+	Resource core.Resource
 }
 
-// Option 配置选项
-type Option func(*config)
-
-// WithEndpoint 设置 Collector 的 OTLP/HTTP 地址（默认 localhost:4318）
-func WithEndpoint(addr string) Option {
-	return func(c *config) { c.endpoint = addr }
-}
-
-// WithInsecure 关闭 TLS（本地/内网 Collector 使用；默认开启 TLS）
-func WithInsecure() Option {
-	return func(c *config) { c.insecure = true }
-}
-
-// WithHeaders 设置额外的请求头（如鉴权 token）
-func WithHeaders(h map[string]string) Option {
-	return func(c *config) { c.headers = h }
-}
-
-// WithService 设置 resource：service.name / service.version
-func WithService(name, version string) Option {
-	return func(c *config) {
-		c.serviceName = name
-		c.serviceVer = version
+// DefaultConfig 返回推荐默认配置（localhost:4318、TLS 开启、批量间隔 5s）
+func DefaultConfig() Config {
+	return Config{
+		Endpoint:      defaultEndpoint,
+		BatchInterval: defaultBatchInterval,
 	}
 }
 
-// WithResource 直接用 logger 的 resource 配置（避免与 logger.Config 重复维护）
-// 用法：otlpsink.WithResource(cfg.Resource())
-func WithResource(r core.Resource) Option {
-	return func(c *config) {
-		if r.ServiceName != "" {
-			c.serviceName = r.ServiceName
-		}
-		if r.ServiceVersion != "" {
-			c.serviceVer = r.ServiceVersion
-		}
-		if r.Environment != "" {
-			c.environment = r.Environment
-		}
-		if r.HostName != "" {
-			c.hostName = r.HostName
-		}
-	}
-}
-
-// WithEnvironment 设置 resource：deployment.environment
-func WithEnvironment(env string) Option {
-	return func(c *config) { c.environment = env }
-}
-
-// WithHost 设置 resource：host.name
-func WithHost(host string) Option {
-	return func(c *config) { c.hostName = host }
-}
-
-// WithBatchInterval 设置批量导出间隔（默认 5s）
-func WithBatchInterval(d time.Duration) Option {
-	return func(c *config) { c.batchInterval = d }
-}
-
-// defaultConfig 默认配置：默认启用 TLS（需明文时用 WithInsecure 显式关闭）
-func defaultConfig() *config {
-	return &config{
-		endpoint:      defaultEndpoint,
-		batchInterval: defaultBatchInterval,
-	}
-}
-
-// Sink OTLP 日志导出器，实现 core.Hook（并实现 core.Flusher）
+// Sink OTLP 日志导出器，实现 core.Emitter（并实现 core.Flusher）
 type Sink struct {
 	provider *sdklog.LoggerProvider
 	logger   otellog.Logger
 }
 
-// New 创建 Sink 并返回关闭函数
+// New 按配置创建 Sink 并返回关闭函数
 // 关闭函数用于进程退出前刷新缓冲（必须调用，否则最后一批日志可能丢失）
-func New(ctx context.Context, opts ...Option) (*Sink, func(context.Context) error, error) {
-	cfg := defaultConfig()
-	for _, o := range opts {
-		o(cfg)
+func New(ctx context.Context, cfg Config) (*Sink, func(context.Context) error, error) {
+	if cfg.Endpoint == "" {
+		cfg.Endpoint = defaultEndpoint
+	}
+	if cfg.BatchInterval <= 0 {
+		cfg.BatchInterval = defaultBatchInterval
 	}
 
-	expOpts := []otlploghttp.Option{otlploghttp.WithEndpoint(cfg.endpoint)}
-	if cfg.insecure {
+	expOpts := []otlploghttp.Option{otlploghttp.WithEndpoint(cfg.Endpoint)}
+	if cfg.Insecure {
 		expOpts = append(expOpts, otlploghttp.WithInsecure())
 	}
-	if len(cfg.headers) > 0 {
-		expOpts = append(expOpts, otlploghttp.WithHeaders(cfg.headers))
+	if len(cfg.Headers) > 0 {
+		expOpts = append(expOpts, otlploghttp.WithHeaders(cfg.Headers))
 	}
 	exp, err := otlploghttp.New(ctx, expOpts...)
 	if err != nil {
@@ -132,21 +77,16 @@ func New(ctx context.Context, opts ...Option) (*Sink, func(context.Context) erro
 	}
 
 	provider := sdklog.NewLoggerProvider(
-		sdklog.WithResource(buildResource(cfg)),
+		sdklog.WithResource(buildResource(cfg.Resource)),
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(exp,
-			sdklog.WithExportInterval(cfg.batchInterval),
+			sdklog.WithExportInterval(cfg.BatchInterval),
 		)),
 	)
 
 	return &Sink{provider: provider, logger: provider.Logger("go-gear")}, provider.Shutdown, nil
 }
 
-// Flush 强制刷新批量缓冲（实现 core.Flusher，Fatal 退出前会被调用）
-func (s *Sink) Flush(ctx context.Context) error {
-	return s.provider.ForceFlush(ctx)
-}
-
-// Emit 实现 core.Hook：把结构化记录翻译为 OTel LogRecord 并提交批量导出
+// Emit 实现 core.Emitter：把结构化记录翻译为 OTel LogRecord 并提交批量导出
 //
 // 链路关联：OTel Logs API 的 trace/span 由 ctx 携带（非 Record 字段）——
 // 若 ctx 已含 OTel span context（挂了 middleware.OTel）则天然对齐；
@@ -176,6 +116,11 @@ func (s *Sink) Emit(ctx context.Context, r *core.Record) {
 	s.logger.Emit(ctx, rec)
 }
 
+// Flush 强制刷新批量缓冲（实现 core.Flusher，Fatal 退出前会被调用）
+func (s *Sink) Flush(ctx context.Context) error {
+	return s.provider.ForceFlush(ctx)
+}
+
 // contextWithTraceIDs 用 hex trace/span id 构造 SpanContext 注入 ctx
 // 使 SDK 导出时能填入 trace_id / span_id（gctx 场景）
 func contextWithTraceIDs(ctx context.Context, traceIDHex, spanIDHex string) context.Context {
@@ -195,19 +140,19 @@ func contextWithTraceIDs(ctx context.Context, traceIDHex, spanIDHex string) cont
 }
 
 // buildResource 构造 OTel Resource（语义约定键）
-func buildResource(cfg *config) *resource.Resource {
+func buildResource(r core.Resource) *resource.Resource {
 	attrs := make([]attribute.KeyValue, 0, 4)
-	if cfg.serviceName != "" {
-		attrs = append(attrs, attribute.String("service.name", cfg.serviceName))
+	if r.ServiceName != "" {
+		attrs = append(attrs, attribute.String("service.name", r.ServiceName))
 	}
-	if cfg.serviceVer != "" {
-		attrs = append(attrs, attribute.String("service.version", cfg.serviceVer))
+	if r.ServiceVersion != "" {
+		attrs = append(attrs, attribute.String("service.version", r.ServiceVersion))
 	}
-	if cfg.environment != "" {
-		attrs = append(attrs, attribute.String("deployment.environment", cfg.environment))
+	if r.Environment != "" {
+		attrs = append(attrs, attribute.String("deployment.environment", r.Environment))
 	}
-	if cfg.hostName != "" {
-		attrs = append(attrs, attribute.String("host.name", cfg.hostName))
+	if r.HostName != "" {
+		attrs = append(attrs, attribute.String("host.name", r.HostName))
 	}
 	return resource.NewWithAttributes("", attrs...)
 }

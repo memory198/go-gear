@@ -79,8 +79,10 @@ logger          logger/otlpsink     主包零 otel 依赖；otlpsink 不依赖�
 - **链路关联**：ctx 已含 OTel span context 时天然对齐；否则用 Record 的 gctx hex id 注入 SpanContext
 
 ```go
-sink, shutdown, err := otlpsink.New(ctx,
-    otlpsink.WithEndpoint("localhost:4318"), otlpsink.WithService("user-api", "1.2.0"))
+sink, shutdown, err := otlpsink.New(ctx, otlpsink.Config{
+    Endpoint: "localhost:4318", Insecure: true,
+    Resource: lcfg.Resource(),
+})
 if err == nil {
     defer shutdown(ctx)
     l.AddHook(sink)
