@@ -10,7 +10,9 @@ const (
 	JSONFormat               // 结构化 JSON，字段对齐 OTel Logs Data Model
 )
 
-func parseFormat(s string) Format {
+// ParseFormat 将格式名解析为 Format（"json" → JSONFormat，其余 → TextFormat）
+// 便于把配置项（如 config 包的 Log.Format 字符串）转为输出格式
+func ParseFormat(s string) Format {
 	switch s {
 	case "json":
 		return JSONFormat

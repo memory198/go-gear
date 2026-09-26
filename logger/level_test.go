@@ -20,8 +20,8 @@ func TestParseLevel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := parseLevel(tt.in); got != tt.want {
-				t.Errorf("parseLevel(%q) = %v, want %v", tt.in, got, tt.want)
+			if got := ParseLevel(tt.in); got != tt.want {
+				t.Errorf("ParseLevel(%q) = %v, want %v", tt.in, got, tt.want)
 			}
 		})
 	}

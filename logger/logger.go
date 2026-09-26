@@ -90,8 +90,8 @@ func (c Config) Resource() Resource {
 // Deprecated: 位置参数过多且难扩展，建议使用 New(Config{...})
 func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge int, caller bool) (*Logger, error) {
 	return New(Config{
-		Level:    parseLevel(level),
-		Format:   parseFormat(format),
+		Level:    ParseLevel(level),
+		Format:   ParseFormat(format),
 		Console:  console,
 		FileDir:  fileDir,
 		Filename: filename,

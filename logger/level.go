@@ -14,5 +14,6 @@ const (
 	FATAL = core.FATAL
 )
 
-// parseLevel 解析级别名（内部转发到 core.ParseLevel）
-func parseLevel(s string) Level { return core.ParseLevel(s) }
+// ParseLevel 将级别名解析为 Level（不区分大小写，未知值返回 INFO）
+// 便于把配置项（如 config 包的 Log.Level 字符串）转为日志级别
+func ParseLevel(s string) Level { return core.ParseLevel(s) }
