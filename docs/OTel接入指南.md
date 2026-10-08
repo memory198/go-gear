@@ -245,49 +245,7 @@ OTel 中间件挂上后，logger 输出自动包含 trace 链路字段：
 
 ## 日志 OTLP 导出（可选）
 
-除 span 外，日志也可通过 OTLP 导出到同一个 Collector，实现**日志 ↔ trace 同后端互跳**。
-
-### 何时需要
-
-- 已在 OTel 生态（有 Collector），希望点开 span 直接看到该 trace 的日志
-- 免去在采集端（Promtail/filelog）配置 JSON 解析规则
-- 若日志已通过文件采集到 Loki/ELK，可不用此功能
-
-### 接入方式
-
-```go
-import "github.com/memory198/go-gear/logger/otlpsink"
-
-lcfg := logger.Config{
-    Format: logger.JSONFormat, Console: true,
-    Service: "user-api", Version: "1.2.0", Env: "prod",   // resource 与 span 保持一致
-}
-l, _ := logger.New(lcfg)
-
-sink, shutdown, err := otlpsink.New(ctx, otlpsink.Config{
-    Endpoint: "localhost:4318",   // Collector 的 OTLP/HTTP 端口
-    Insecure: true,               // 默认启用 TLS；本地/内网明文需显式开启
-    Resource: lcfg.Resource(),    // 复用 logger 的 resource（避免两处维护）
-})
-if err != nil {
-    logger.Print("otlp sink disabled: ", err)  // 导出不可用不影响落盘日志
-} else {
-    defer shutdown(ctx)                        // 进程退出前必须调用，刷新批量缓冲
-    l.AddHook(sink)
-}
-logger.SetDefault(l)
-```
-
-> 零值字段会使用默认值（Endpoint=localhost:4318、批量间隔 5s、TLS 开启）；可用 `otlpsink.DefaultConfig()` 获取完整默认配置。
-> `sink` 同时实现了 `core.Flusher`，因此 `logger.Fatal` 退出前会自动刷新缓冲；正常退出仍建议 `defer shutdown(ctx)`。
-
-### 说明
-
-- **落盘输出不受影响**：OTLP 是旁路，stdout/file 照常
-- **链路关联**：ctx 已含 OTel span context 时直接使用；仅 gctx 时用其 hex id 注入，日志与 span 的 trace_id/span_id 自动对齐
-- **severity**：日志级别数值即 OTel SeverityNumber，无需映射
-- **失败容错**：批量异步导出，Collector 不可用不会阻塞业务
-- **依赖**：`otlpsink` 为可选子包，主包 logger 不引入任何 otel 依赖
+除 span 外，日志也可通过 OTLP 导出到同一个 Collector，实现**日志 ↔ trace 同后端互跳**（需要场景、接入代码、链路关联说明见 [logger/docs/OTLP导出](../logger/docs/OTLP导出.md)）。
 
 ---
 
