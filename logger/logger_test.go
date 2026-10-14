@@ -3,6 +3,7 @@ package logger
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"regexp"
@@ -244,6 +245,36 @@ func TestJSONFormatWithResource(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("resource output missing %s: %q", want, out)
+		}
+	}
+}
+
+// JSON 格式必须“一行一条”：每条以换行结尾，且含换行的消息被转义后不会拆成多行，
+// 否则按行采集（filebeat/promtail 等）无法解析。
+func TestJSONFormatOneLinePerRecord(t *testing.T) {
+	buf := &bytes.Buffer{}
+	l := &Logger{
+		cfg:     Config{Level: DEBUG, Format: JSONFormat},
+		enc:     jsonEncoder{},
+		writers: []io.Writer{buf},
+	}
+	ctx := context.Background()
+	l.Info(ctx, "first", "k", 1)
+	l.Warn(ctx, "multi\nline\r\nmessage", "v", "a\nb")
+	l.Error(ctx, "third")
+
+	out := buf.String()
+	if !strings.HasSuffix(out, "}\n") {
+		t.Fatalf("output should end with newline: %q", out)
+	}
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want 3 lines, got %d: %q", len(lines), out)
+	}
+	for i, line := range lines {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Errorf("line %d is not valid JSON: %v: %q", i, err, line)
 		}
 	}
 }

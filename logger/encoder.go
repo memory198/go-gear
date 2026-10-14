@@ -224,7 +224,8 @@ func (jsonEncoder) appendTo(b []byte, r *core.Record) []byte {
 		b = append(b, '}')
 	}
 
-	return append(b, '}')
+	// 以换行结尾，保证“一行一条”（JSON Lines），与 text 编码器一致，便于按行采集
+	return append(b, '}', '\n')
 }
 
 // appendJSONValue 追加 JSON 值
