@@ -10,10 +10,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/memory198/go-gear/logger/core"
 )
 
 // newTestLogger 构造写入内存 buffer 的 Logger，绕过文件系统便于断言
-func newTestLogger(level Level) (*Logger, *bytes.Buffer) {
+func newTestLogger(level core.Level) (*Logger, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
 	return &Logger{
 		cfg:     Config{Level: level, Caller: true},
@@ -25,15 +27,15 @@ func newTestLogger(level Level) (*Logger, *bytes.Buffer) {
 func TestLevelFiltering(t *testing.T) {
 	tests := []struct {
 		name       string
-		cfgLevel   Level
+		cfgLevel   core.Level
 		call       func(l *Logger, ctx context.Context)
 		wantOutput bool
 	}{
-		{"debug filtered at info level", INFO, func(l *Logger, ctx context.Context) { l.Debug(ctx, "x") }, false},
-		{"info passes at info level", INFO, func(l *Logger, ctx context.Context) { l.Info(ctx, "x") }, true},
-		{"warn filtered at error level", ERROR, func(l *Logger, ctx context.Context) { l.Warn(ctx, "x") }, false},
-		{"error passes at error level", ERROR, func(l *Logger, ctx context.Context) { l.Error(ctx, "x") }, true},
-		{"debug passes at debug level", DEBUG, func(l *Logger, ctx context.Context) { l.Debug(ctx, "x") }, true},
+		{"debug filtered at info level", core.INFO, func(l *Logger, ctx context.Context) { l.Debug(ctx, "x") }, false},
+		{"info passes at info level", core.INFO, func(l *Logger, ctx context.Context) { l.Info(ctx, "x") }, true},
+		{"warn filtered at error level", core.ERROR, func(l *Logger, ctx context.Context) { l.Warn(ctx, "x") }, false},
+		{"error passes at error level", core.ERROR, func(l *Logger, ctx context.Context) { l.Error(ctx, "x") }, true},
+		{"debug passes at debug level", core.DEBUG, func(l *Logger, ctx context.Context) { l.Debug(ctx, "x") }, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -48,7 +50,7 @@ func TestLevelFiltering(t *testing.T) {
 }
 
 func TestLogFormat_NoTraceIDs(t *testing.T) {
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	l.Info(context.Background(), "hello world")
 
 	out := buf.String()
@@ -59,7 +61,7 @@ func TestLogFormat_NoTraceIDs(t *testing.T) {
 }
 
 func TestLogFormat_WithRootTraceID(t *testing.T) {
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	ctx := context.WithValue(context.Background(), RootTraceIDKey, "root-1")
 	l.Info(ctx, "hello")
 
@@ -74,7 +76,7 @@ func TestLogFormat_WithRootTraceID(t *testing.T) {
 func TestLogJSONFormat_AllTraceFields(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: true, ParentSpanIDs: true},
+		cfg:     Config{Level: core.DEBUG, Format: JSONFormat, Caller: true, ParentSpanIDs: true},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -114,7 +116,7 @@ func TestLogJSONFormat_MiddleSpanIDsDisabledByDefault(t *testing.T) {
 	// 默认（未开启 MiddleSpanIDs）不应输出 parent_span_ids
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat},
+		cfg:     Config{Level: core.DEBUG, Format: JSONFormat},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -137,7 +139,7 @@ func TestLogJSONFormat_MiddleSpanIDsDisabledByDefault(t *testing.T) {
 func TestLogJSONFormat_NoTraceFields(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: true},
+		cfg:     Config{Level: core.DEBUG, Format: JSONFormat, Caller: true},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -162,7 +164,7 @@ func TestFormattedMethods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l, buf := newTestLogger(DEBUG)
+			l, buf := newTestLogger(core.DEBUG)
 			tt.call(l, context.Background())
 			if !strings.Contains(buf.String(), tt.want) {
 				t.Errorf("output = %q, want contains %q", buf.String(), tt.want)
@@ -172,7 +174,7 @@ func TestFormattedMethods(t *testing.T) {
 }
 
 func TestTextFormatWithFields(t *testing.T) {
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	l.Info(context.Background(), "user created", "user_id", 123, "source", "api")
 
 	out := buf.String()
@@ -184,7 +186,7 @@ func TestTextFormatWithFields(t *testing.T) {
 func TestJSONFormatWithFields(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: false},
+		cfg:     Config{Level: core.DEBUG, Format: JSONFormat, Caller: false},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -210,7 +212,7 @@ func TestJSONFormatWithFieldsReservedKeyIgnored(t *testing.T) {
 	// kv key 与内置字段同名（如 severity_text）应被忽略，不破坏结构
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat, Caller: false},
+		cfg:     Config{Level: core.DEBUG, Format: JSONFormat, Caller: false},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -226,9 +228,9 @@ func TestJSONFormatWithResource(t *testing.T) {
 	// resource 元信息嵌套输出（点分键）
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg: Config{Level: DEBUG, Format: JSONFormat},
+		cfg: Config{Level: core.DEBUG, Format: JSONFormat},
 		enc: jsonEncoder{},
-		res: Resource{
+		res: core.Resource{
 			ServiceName:    "user-api",
 			ServiceVersion: "1.2.0",
 			Environment:    "prod",
@@ -254,7 +256,7 @@ func TestJSONFormatWithResource(t *testing.T) {
 func TestJSONFormatOneLinePerRecord(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat},
+		cfg:     Config{Level: core.DEBUG, Format: JSONFormat},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -283,7 +285,7 @@ func TestJSONFormatEscape(t *testing.T) {
 	// 引号/反斜杠/换行等需要正确转义
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Format: JSONFormat},
+		cfg:     Config{Level: core.DEBUG, Format: JSONFormat},
 		enc:     jsonEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -300,7 +302,7 @@ func TestJSONFormatEscape(t *testing.T) {
 
 func TestOddArgsBadKey(t *testing.T) {
 	// 奇数个 kv 参数：末尾裸值记为 !BADKEY（slog 约定）
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	l.Info(context.Background(), "odd", "user_id", 123, "orphan")
 
 	out := buf.String()
@@ -311,7 +313,7 @@ func TestOddArgsBadKey(t *testing.T) {
 
 func TestPrintNoTrace(t *testing.T) {
 	// Print 为 INFO 级且不携带 trace 字段
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	l.Print("server starting", "port", 8080)
 
 	out := buf.String()
@@ -327,7 +329,7 @@ func TestPrintNoTrace(t *testing.T) {
 }
 
 func TestPrintfFormatting(t *testing.T) {
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	l.Printf("server on %s:%d", "0.0.0.0", 8080)
 
 	out := buf.String()
@@ -338,7 +340,7 @@ func TestPrintfFormatting(t *testing.T) {
 
 func TestPrintLevelFiltered(t *testing.T) {
 	// Print 是 INFO 级：INFO 级别下应输出，ERROR 级别下应被过滤
-	l, buf := newTestLogger(ERROR)
+	l, buf := newTestLogger(core.ERROR)
 	l.Print("should be filtered")
 	if buf.Len() > 0 {
 		t.Errorf("Print(INFO) should be filtered at ERROR level: %q", buf.String())
@@ -347,7 +349,7 @@ func TestPrintLevelFiltered(t *testing.T) {
 
 func TestPackageLevelPrint(t *testing.T) {
 	buf := &bytes.Buffer{}
-	l := &Logger{cfg: Config{Level: DEBUG}, enc: textEncoder{}, writers: []io.Writer{buf}}
+	l := &Logger{cfg: Config{Level: core.DEBUG}, enc: textEncoder{}, writers: []io.Writer{buf}}
 	old := getDefault()
 	SetDefault(l)
 	defer SetDefault(old)
@@ -362,10 +364,10 @@ func TestPackageLevelPrint(t *testing.T) {
 
 func TestHookReceivesRecord(t *testing.T) {
 	// Hook 在序列化前收到结构化 Record，且不影响落盘输出
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 
-	var got *Record
-	l.AddHook(HookFunc(func(ctx context.Context, r *Record) {
+	var got *core.Record
+	l.AddHook(core.HookFunc(func(ctx context.Context, r *core.Record) {
 		got = r
 	}))
 
@@ -376,7 +378,7 @@ func TestHookReceivesRecord(t *testing.T) {
 	if got == nil {
 		t.Fatal("hook should receive a record")
 	}
-	if got.Body != "hook test" || got.Level != INFO {
+	if got.Body != "hook test" || got.Level != core.INFO {
 		t.Errorf("record body/level mismatch: %+v", got)
 	}
 	if got.TraceID != "r1" || got.SpanID != "s1" {
@@ -397,7 +399,7 @@ func TestHookReceivesRecord(t *testing.T) {
 
 func TestAddHookNilSafe(t *testing.T) {
 	// 未注册 Hook 时不应 panic，且输出正常
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	l.AddHook(nil)
 	l.Info(context.Background(), "no hook")
 	if !strings.Contains(buf.String(), "no hook") {
@@ -407,14 +409,14 @@ func TestAddHookNilSafe(t *testing.T) {
 
 func TestAddHookConcurrent(t *testing.T) {
 	// 并发注册 Hook 不应丢失（CAS 保证）
-	l, _ := newTestLogger(DEBUG)
+	l, _ := newTestLogger(core.DEBUG)
 	const n = 16
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			l.AddHook(HookFunc(func(context.Context, *Record) {}))
+			l.AddHook(core.HookFunc(func(context.Context, *core.Record) {}))
 		}()
 	}
 	wg.Wait()
@@ -427,7 +429,7 @@ func TestAddHookConcurrent(t *testing.T) {
 
 func TestFlushHooksOnFatal(t *testing.T) {
 	// Fatal 路径会刷新实现 Flusher 的 Emitter（不真正调用 Fatal 以免退出进程）
-	l, _ := newTestLogger(DEBUG)
+	l, _ := newTestLogger(core.DEBUG)
 	flushed := false
 	l.AddHook(&fakeFlusher{onFlush: func() { flushed = true }})
 
@@ -439,8 +441,8 @@ func TestFlushHooksOnFatal(t *testing.T) {
 
 type fakeFlusher struct{ onFlush func() }
 
-func (f *fakeFlusher) Emit(context.Context, *Record) {}
-func (f *fakeFlusher) Flush(context.Context) error   { f.onFlush(); return nil }
+func (f *fakeFlusher) Emit(context.Context, *core.Record) {}
+func (f *fakeFlusher) Flush(context.Context) error        { f.onFlush(); return nil }
 
 func TestSetDefaultNilIgnored(t *testing.T) {
 	// SetDefault(nil) 应被忽略，包级方法不 panic
@@ -459,11 +461,11 @@ func (failWriter) Write([]byte) (int, error) { return 0, errors.New("disk full")
 
 type panicEmitter struct{}
 
-func (panicEmitter) Emit(context.Context, *Record) { panic("boom") }
+func (panicEmitter) Emit(context.Context, *core.Record) { panic("boom") }
 
 func TestEmitterPanicRecovered(t *testing.T) {
 	// 坏 Emitter panic 不应影响日志输出
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	l.AddHook(panicEmitter{})
 	l.Info(context.Background(), "after panic")
 
@@ -476,7 +478,7 @@ func TestOnErrorCallback(t *testing.T) {
 	// 写入失败应触发 Config.OnError
 	var got error
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, OnError: func(err error) { got = err }},
+		cfg:     Config{Level: core.DEBUG, OnError: func(err error) { got = err }},
 		enc:     textEncoder{},
 		writers: []io.Writer{failWriter{}},
 	}
@@ -489,7 +491,7 @@ func TestOnErrorCallback(t *testing.T) {
 
 func TestTextEscapesNewlines(t *testing.T) {
 	// text 输出应保持“一行一条”：正文/属性中的换行被转义
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	l.Info(context.Background(), "line1\nline2", "k", "v1\nv2")
 
 	out := buf.String()
@@ -502,7 +504,7 @@ func TestTextEscapesNewlines(t *testing.T) {
 }
 
 func TestConcurrentWrites(t *testing.T) {
-	l, buf := newTestLogger(DEBUG)
+	l, buf := newTestLogger(core.DEBUG)
 	const n = 50
 
 	var wg sync.WaitGroup
@@ -524,7 +526,7 @@ func TestConcurrentWrites(t *testing.T) {
 func TestNoCaller(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := &Logger{
-		cfg:     Config{Level: DEBUG, Caller: false},
+		cfg:     Config{Level: core.DEBUG, Caller: false},
 		enc:     textEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -539,9 +541,9 @@ func TestNoCaller(t *testing.T) {
 func TestFatal(t *testing.T) {
 	// Fatal 会 os.Exit(1)，需要子进程测试
 	// 此处仅验证 FATAL 级别存在且日志输出级别不低于 FATAL 的级别都能正常写入
-	l, buf := newTestLogger(INFO)
+	l, buf := newTestLogger(core.INFO)
 	// FATAL 级别 >= INFO，应正常输出
-	l.log(context.Background(), FATAL, "fatal message")
+	l.log(context.Background(), core.FATAL, "fatal message")
 	out := buf.String()
 	if !strings.Contains(out, "[FATAL]") {
 		t.Errorf("FATAL log should be written: %q", out)

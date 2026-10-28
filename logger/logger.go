@@ -17,14 +17,14 @@ import (
 
 // Config 日志配置
 type Config struct {
-	Level         Level  // 最低输出等级
-	Format        Format // TextFormat（默认）/ JSONFormat
-	Console       bool   // 是否输出到控制台（和文件可同时）
-	FileDir       string // 文件输出目录，空则不写文件
-	Filename      string // 文件名（不含扩展名），空则取程序名
-	MaxAge        int    // 日志保留天数，<=0 不清理
-	Caller        bool   // 是否记录一行调用位置（直接调用者，内部有缓存，非调用栈）
-	ParentSpanIDs bool   // 是否输出 parent_span_ids（中间 span 链；默认关闭，开启需读取 gctx 聚合）
+	Level         core.Level // 最低输出等级
+	Format        Format     // TextFormat（默认）/ JSONFormat
+	Console       bool       // 是否输出到控制台（和文件可同时）
+	FileDir       string     // 文件输出目录，空则不写文件
+	Filename      string     // 文件名（不含扩展名），空则取程序名
+	MaxAge        int        // 日志保留天数，<=0 不清理
+	Caller        bool       // 是否记录一行调用位置（直接调用者，内部有缓存，非调用栈）
+	ParentSpanIDs bool       // 是否输出 parent_span_ids（中间 span 链；默认关闭，开启需读取 gctx 聚合）
 
 	// resource 元信息（写入日志的 resource 对象；留空则不输出对应键）
 	Service string // service.name
@@ -39,14 +39,14 @@ type Config struct {
 
 // Logger 日志实例
 type Logger struct {
-	cfg        Config                    // 日志配置（级别、格式、输出渠道等）
-	mu         sync.Mutex                // 并发写入锁，保证日志行不交叉
-	enc        encoder                   // 日志编码器（text 或 json）
-	writers    []io.Writer               // 输出目标列表（stdout + 文件可同时存在）
-	currentDay string                    // 当前日志文件所属日期，用于判断是否需要滚动
-	file       *os.File                  // 当前打开的日志文件句柄，仅文件输出时非 nil
-	res        Resource                  // resource 元信息（构造时确定，避免每行重复计算）
-	hooks      atomic.Pointer[[]Emitter] // 结构化输出旁路（OTLP 等），空时热路径零开销
+	cfg        Config                         // 日志配置（级别、格式、输出渠道等）
+	mu         sync.Mutex                     // 并发写入锁，保证日志行不交叉
+	enc        encoder                        // 日志编码器（text 或 json）
+	writers    []io.Writer                    // 输出目标列表（stdout + 文件可同时存在）
+	currentDay string                         // 当前日志文件所属日期，用于判断是否需要滚动
+	file       *os.File                       // 当前打开的日志文件句柄，仅文件输出时非 nil
+	res        core.Resource                  // resource 元信息（构造时确定，避免每行重复计算）
+	hooks      atomic.Pointer[[]core.Emitter] // 结构化输出旁路（OTLP 等），空时热路径零开销
 }
 
 // New 创建 Logger
@@ -71,9 +71,9 @@ func New(cfg Config) (*Logger, error) {
 }
 
 // Resource 返回配置对应的 resource（host 缺省取 os.Hostname）
-// 用于与 OTLP 等外部导出保持一致：otlpsink.WithResource(cfg.Resource())
-func (c Config) Resource() Resource {
-	r := Resource{
+// 用于与 OTLP 等外部导出保持一致：otlpsink.Config{Resource: cfg.Resource()}
+func (c Config) Resource() core.Resource {
+	r := core.Resource{
 		ServiceName:    c.Service,
 		ServiceVersion: c.Version,
 		Environment:    c.Env,
@@ -90,7 +90,7 @@ func (c Config) Resource() Resource {
 // Deprecated: 位置参数过多且难扩展，建议使用 New(Config{...})
 func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge int, caller bool) (*Logger, error) {
 	return New(Config{
-		Level:    ParseLevel(level),
+		Level:    core.ParseLevel(level),
 		Format:   ParseFormat(format),
 		Console:  console,
 		FileDir:  fileDir,
@@ -127,15 +127,23 @@ func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge
 //	   "caller":"handler/user.go:42","root_trace_id":"abc123",
 //	   "middle_span_ids":["m1"],"current_span_id":"s2","user_id":123}
 
-func (l *Logger) Debug(ctx context.Context, msg string, args ...any) { l.log(ctx, DEBUG, msg, args...) }
-func (l *Logger) Info(ctx context.Context, msg string, args ...any)  { l.log(ctx, INFO, msg, args...) }
-func (l *Logger) Warn(ctx context.Context, msg string, args ...any)  { l.log(ctx, WARN, msg, args...) }
-func (l *Logger) Error(ctx context.Context, msg string, args ...any) { l.log(ctx, ERROR, msg, args...) }
+func (l *Logger) Debug(ctx context.Context, msg string, args ...any) {
+	l.log(ctx, core.DEBUG, msg, args...)
+}
+func (l *Logger) Info(ctx context.Context, msg string, args ...any) {
+	l.log(ctx, core.INFO, msg, args...)
+}
+func (l *Logger) Warn(ctx context.Context, msg string, args ...any) {
+	l.log(ctx, core.WARN, msg, args...)
+}
+func (l *Logger) Error(ctx context.Context, msg string, args ...any) {
+	l.log(ctx, core.ERROR, msg, args...)
+}
 
 // Fatal 输出 FATAL 等级日志后退出程序（调用 os.Exit(1)，defer 不会执行）
 // 退出前会尝试刷新实现了 core.Flusher 的 Hook（如 OTLP 批量缓冲）
 func (l *Logger) Fatal(ctx context.Context, msg string, args ...any) {
-	l.log(ctx, FATAL, msg, args...)
+	l.log(ctx, core.FATAL, msg, args...)
 	l.flushHooks(ctx)
 	os.Exit(1)
 }
@@ -143,22 +151,22 @@ func (l *Logger) Fatal(ctx context.Context, msg string, args ...any) {
 // ---- 实例方法：带格式化 ----
 
 func (l *Logger) Debugf(ctx context.Context, format string, args ...any) {
-	l.log(ctx, DEBUG, fmt.Sprintf(format, args...))
+	l.log(ctx, core.DEBUG, fmt.Sprintf(format, args...))
 }
 func (l *Logger) Infof(ctx context.Context, format string, args ...any) {
-	l.log(ctx, INFO, fmt.Sprintf(format, args...))
+	l.log(ctx, core.INFO, fmt.Sprintf(format, args...))
 }
 func (l *Logger) Warnf(ctx context.Context, format string, args ...any) {
-	l.log(ctx, WARN, fmt.Sprintf(format, args...))
+	l.log(ctx, core.WARN, fmt.Sprintf(format, args...))
 }
 func (l *Logger) Errorf(ctx context.Context, format string, args ...any) {
-	l.log(ctx, ERROR, fmt.Sprintf(format, args...))
+	l.log(ctx, core.ERROR, fmt.Sprintf(format, args...))
 }
 
 // Fatalf 格式化 FATAL 等级日志后退出程序
 // 退出前会尝试刷新实现了 core.Flusher 的 Hook
 func (l *Logger) Fatalf(ctx context.Context, format string, args ...any) {
-	l.log(ctx, FATAL, fmt.Sprintf(format, args...))
+	l.log(ctx, core.FATAL, fmt.Sprintf(format, args...))
 	l.flushHooks(ctx)
 	os.Exit(1)
 }
@@ -186,24 +194,24 @@ func (l *Logger) flushHooks(ctx context.Context) {
 // 参数语义：msg 为消息正文，args 为 slog 键值对字段（与 Info(ctx, msg, kv...) 一致）
 // ⚠️ 不做格式化——需要格式化请用 Printf
 func (l *Logger) Print(msg string, args ...any) {
-	l.log(context.Background(), INFO, msg, args...)
+	l.log(context.Background(), core.INFO, msg, args...)
 }
 
 // Printf 格式化输出 INFO 级日志（无 ctx）
 // 参数语义：format + 格式化参数（内部 fmt.Sprintf），与 Print 的 kv 语义不同
 func (l *Logger) Printf(format string, args ...any) {
-	l.log(context.Background(), INFO, fmt.Sprintf(format, args...))
+	l.log(context.Background(), core.INFO, fmt.Sprintf(format, args...))
 }
 
 // AddHook 注册结构化日志消费点（如 OTLP 导出），在序列化之前对每条日志调用
 // 线程安全（CAS 循环）；通常应在服务启动阶段注册
-func (l *Logger) AddHook(h Emitter) {
+func (l *Logger) AddHook(h core.Emitter) {
 	if h == nil {
 		return
 	}
 	for {
 		old := l.hooks.Load()
-		var next []Emitter
+		var next []core.Emitter
 		if old != nil {
 			next = append(next, *old...)
 		}
@@ -215,7 +223,7 @@ func (l *Logger) AddHook(h Emitter) {
 }
 
 // log 核心写入逻辑
-func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) {
+func (l *Logger) log(ctx context.Context, level core.Level, msg string, args ...any) {
 	if level < l.cfg.Level {
 		return
 	}
@@ -229,7 +237,7 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 		file, lineno = findCaller()
 	}
 
-	rec := Record{
+	rec := core.Record{
 		Timestamp:     now,
 		Level:         level,
 		Body:          msg,
@@ -275,7 +283,7 @@ func (l *Logger) log(ctx context.Context, level Level, msg string, args ...any) 
 }
 
 // emitSafe 调用 Emitter 并捕获 panic（坏 Hook 不应影响业务日志调用）
-func emitSafe(ctx context.Context, e Emitter, r *Record) {
+func emitSafe(ctx context.Context, e core.Emitter, r *core.Record) {
 	defer func() {
 		if v := recover(); v != nil {
 			fmt.Fprintf(os.Stderr, "logger: emitter panic: %v\n", v)

@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"sync/atomic"
+
+	"github.com/memory198/go-gear/logger/core"
 )
 
 // defaultLogger 包级默认日志实例，开箱即用
@@ -19,14 +21,14 @@ var defaultLogger atomic.Pointer[Logger]
 
 func init() {
 	l, err := New(Config{
-		Level:   DEBUG,
+		Level:   core.DEBUG,
 		Format:  TextFormat,
 		Console: true,
 		Caller:  true,
 	})
 	if err != nil || l == nil {
 		// 理论上不会发生；降级为 stderr 直写，保证包级方法不会因 nil 而 panic
-		l = &Logger{cfg: Config{Level: DEBUG}, enc: textEncoder{}, writers: []io.Writer{os.Stderr}}
+		l = &Logger{cfg: Config{Level: core.DEBUG}, enc: textEncoder{}, writers: []io.Writer{os.Stderr}}
 	}
 	defaultLogger.Store(l)
 }

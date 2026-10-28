@@ -4,10 +4,12 @@ import (
 	"context"
 	"io"
 	"testing"
+
+	"github.com/memory198/go-gear/logger/core"
 )
 
 func benchLogger(format Format, caller bool) *Logger {
-	cfg := Config{Level: DEBUG, Format: format, Caller: caller}
+	cfg := Config{Level: core.DEBUG, Format: format, Caller: caller}
 	enc := encoder(textEncoder{})
 	if format == JSONFormat {
 		enc = jsonEncoder{}

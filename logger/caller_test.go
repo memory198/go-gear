@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/memory198/go-gear/logger"
+	"github.com/memory198/go-gear/logger/core"
 )
 
 // caller 测试放在外部测试包（logger_test）：
@@ -33,7 +34,7 @@ func readLog(t *testing.T, dir string) string {
 
 func TestCallerEnabled(t *testing.T) {
 	dir := t.TempDir()
-	l, err := logger.New(logger.Config{Level: logger.DEBUG, FileDir: dir, Filename: "test", Caller: true})
+	l, err := logger.New(logger.Config{Level: core.DEBUG, FileDir: dir, Filename: "test", Caller: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +53,7 @@ func TestCallerEnabled(t *testing.T) {
 
 func TestCallerDisabled(t *testing.T) {
 	dir := t.TempDir()
-	l, err := logger.New(logger.Config{Level: logger.DEBUG, FileDir: dir, Filename: "test", Caller: false})
+	l, err := logger.New(logger.Config{Level: core.DEBUG, FileDir: dir, Filename: "test", Caller: false})
 	if err != nil {
 		t.Fatal(err)
 	}

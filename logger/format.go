@@ -21,15 +21,8 @@ func ParseFormat(s string) Format {
 	}
 }
 
-// 数据契约类型别名（定义在 core 包，供 otlpsink 等扩展共享）
-type (
-	Record   = core.Record
-	Attr     = core.Attr
-	Resource = core.Resource
-	Emitter  = core.Emitter
-	HookFunc = core.HookFunc
-	Flusher  = core.Flusher
-)
+// 数据契约（Record/Attr/Resource/Emitter/HookFunc/Flusher）
+// 直接使用 logger/core 包的类型，不在本包提供别名
 
 // reservedKeys 内置字段名集合
 // 自定义 kv 与内置字段重名时跳过，防止覆盖内置字段导致类型/结构异常
@@ -54,11 +47,11 @@ var reservedKeys = map[string]bool{
 // key 必须为非空 string，否则记为 !BADKEY；奇数个参数时末尾裸值记为 !BADKEY
 // 与内置字段重名的 kv 直接丢弃
 // 注意：重复 key 不做去重（与 slog/zap 一致），消费端通常以后一个值为准
-func parseArgs(args []any) []Attr {
+func parseArgs(args []any) []core.Attr {
 	if len(args) == 0 {
 		return nil
 	}
-	attrs := make([]Attr, 0, (len(args)+1)/2)
+	attrs := make([]core.Attr, 0, (len(args)+1)/2)
 	for i := 0; i+1 < len(args); i += 2 {
 		key, ok := args[i].(string)
 		if !ok || key == "" {
@@ -67,10 +60,10 @@ func parseArgs(args []any) []Attr {
 		if reservedKeys[key] {
 			continue // 内置字段优先，丢弃同名的自定义字段
 		}
-		attrs = append(attrs, Attr{Key: key, Value: args[i+1]})
+		attrs = append(attrs, core.Attr{Key: key, Value: args[i+1]})
 	}
 	if len(args)%2 == 1 {
-		attrs = append(attrs, Attr{Key: "!BADKEY", Value: args[len(args)-1]})
+		attrs = append(attrs, core.Attr{Key: "!BADKEY", Value: args[len(args)-1]})
 	}
 	return attrs
 }

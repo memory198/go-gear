@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/memory198/go-gear/logger/core"
 	"time"
 )
 
@@ -78,8 +80,8 @@ func TestNewFromConfig_FieldMapping(t *testing.T) {
 	}
 	defer l.Close()
 
-	if l.cfg.Level != WARN {
-		t.Errorf("Level = %v, want WARN", l.cfg.Level)
+	if l.cfg.Level != core.WARN {
+		t.Errorf("Level = %v, want core.WARN", l.cfg.Level)
 	}
 	if l.cfg.Format != JSONFormat {
 		t.Errorf("Format = %v, want JSONFormat", l.cfg.Format)
@@ -226,7 +228,7 @@ func TestDefaultLogger(t *testing.T) {
 	// 替换为自定义 logger
 	buf := &bytes.Buffer{}
 	custom := &Logger{
-		cfg:     Config{Level: DEBUG, Format: TextFormat},
+		cfg:     Config{Level: core.DEBUG, Format: TextFormat},
 		enc:     textEncoder{},
 		writers: []io.Writer{buf},
 	}
@@ -261,7 +263,7 @@ func TestCleanExpiredLogsPrefixIsolation(t *testing.T) {
 	otherInstance := mk("app2.2026-01-01.log") // 其他实例前缀包含 app，应保留
 	otherName := mk("app-debug.log")           // 非日期格式，应保留
 
-	l, err := New(Config{Level: DEBUG, FileDir: dir, Filename: "app", MaxAge: 1})
+	l, err := New(Config{Level: core.DEBUG, FileDir: dir, Filename: "app", MaxAge: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +282,7 @@ func TestCleanExpiredLogsPrefixIsolation(t *testing.T) {
 // TestRotateFileFailureKeepsOldFile 滚动打开失败时应保留旧句柄（不丢日志）
 func TestRotateFileFailureKeepsOldFile(t *testing.T) {
 	dir := t.TempDir()
-	l, err := New(Config{Level: DEBUG, FileDir: dir, Filename: "app"})
+	l, err := New(Config{Level: core.DEBUG, FileDir: dir, Filename: "app"})
 	if err != nil {
 		t.Fatal(err)
 	}
