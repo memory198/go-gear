@@ -31,7 +31,7 @@ logger.SetDefault(l)
 ```
 
 > 零值字段会使用默认值（Endpoint=localhost:4318、批量间隔 5s、TLS 开启）；可用 `otlpsink.DefaultConfig()` 获取完整默认配置。
-> `sink` 同时实现了 `core.Flusher`，因此 `logger.Fatal` 退出前会自动刷新缓冲；正常退出仍建议 `defer shutdown(ctx)`。
+> `sink` 实现了 `core.Flusher`：`logger.Fatal`/`Fatal` 与 `Logger.Close` 会自动并行刷新缓冲（2 秒超时）。正常退出仍建议 `defer shutdown(ctx)`；请保证 shutdown 在 `Close` 之后执行（defer 先注册者后执行）。
 
 ## 说明
 

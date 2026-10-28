@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/memory198/go-gear/logger/core"
 )
@@ -445,6 +446,119 @@ type fakeFlusher struct{ onFlush func() }
 
 func (f *fakeFlusher) Emit(context.Context, core.Record) {}
 func (f *fakeFlusher) Flush(context.Context) error       { f.onFlush(); return nil }
+
+type ctxFlusher struct {
+	fn func(ctx context.Context) error
+}
+
+func (ctxFlusher) Emit(context.Context, core.Record) {}
+func (f ctxFlusher) Flush(ctx context.Context) error { return f.fn(ctx) }
+
+func TestCloseFlushesHooks(t *testing.T) {
+	// Close 关闭文件前应刷新实现 Flusher 的 Hook
+	l, _ := newTestLogger(core.DEBUG)
+	flushed := false
+	l.AddHook(&fakeFlusher{onFlush: func() { flushed = true }})
+	if err := l.Close(); err != nil {
+		t.Fatalf("Close() failed: %v", err)
+	}
+	if !flushed {
+		t.Error("Close should flush core.Flusher hooks")
+	}
+}
+
+func TestFlushHooksParallel(t *testing.T) {
+	// 多个 Flusher 并行执行：慢 Hook 不应阻塞快 Hook
+	l, _ := newTestLogger(core.DEBUG)
+	slowStarted := make(chan struct{})
+	release := make(chan struct{})
+	fastDone := make(chan struct{}, 1)
+	l.AddHook(ctxFlusher{fn: func(context.Context) error {
+		close(slowStarted)
+		<-release
+		return nil
+	}})
+	l.AddHook(ctxFlusher{fn: func(context.Context) error {
+		fastDone <- struct{}{}
+		return nil
+	}})
+
+	done := make(chan struct{})
+	go func() {
+		l.flushHooks(context.Background())
+		close(done)
+	}()
+
+	<-slowStarted
+	select {
+	case <-fastDone:
+	case <-time.After(2 * time.Second):
+		t.Error("hooks should flush in parallel: fast hook blocked by slow hook")
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Error("flushHooks should return after all hooks finish")
+	}
+}
+
+func TestFlushHooksIgnoresCancelledParent(t *testing.T) {
+	// 父 ctx 已取消时仍应刷新（Fatal 常发生在请求超时/断连后）
+	l, _ := newTestLogger(core.DEBUG)
+	var seen bool
+	var ctxErr error
+	l.AddHook(ctxFlusher{fn: func(ctx context.Context) error {
+		seen = true
+		ctxErr = ctx.Err()
+		return nil
+	}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	l.flushHooks(ctx)
+
+	if !seen {
+		t.Fatal("flush should be called even if parent ctx canceled")
+	}
+	if ctxErr != nil {
+		t.Errorf("flush ctx should not inherit parent cancel: %v", ctxErr)
+	}
+}
+
+func TestFlushHooksErrorReported(t *testing.T) {
+	// Flush 返回的错误应经 OnError 上报（带 Hook 类型）
+	l, _ := newTestLogger(core.DEBUG)
+	var gotErr error
+	l.cfg.OnError = func(err error) { gotErr = err }
+	l.AddHook(ctxFlusher{fn: func(context.Context) error { return errors.New("flush failed") }})
+
+	l.flushHooks(context.Background())
+
+	if gotErr == nil {
+		t.Fatal("flush error should be reported via Config.OnError")
+	}
+	if !strings.Contains(gotErr.Error(), "ctxFlusher") {
+		t.Errorf("reported error should mention hook type: %v", gotErr)
+	}
+}
+
+func TestFlushHooksPanicRecovered(t *testing.T) {
+	// 坏 Flusher panic 不应影响其他 Hook 与退出流程
+	l, _ := newTestLogger(core.DEBUG)
+	l.AddHook(panicFlusher{})
+	flushed := false
+	l.AddHook(&fakeFlusher{onFlush: func() { flushed = true }})
+	l.flushHooks(context.Background())
+	if !flushed {
+		t.Error("healthy flusher should still run after another flusher panic")
+	}
+}
+
+type panicFlusher struct{}
+
+func (panicFlusher) Emit(context.Context, core.Record) {}
+func (panicFlusher) Flush(context.Context) error       { panic("boom") }
 
 func TestSetDefaultNilIgnored(t *testing.T) {
 	// SetDefault(nil) 应被忽略，包级方法不 panic

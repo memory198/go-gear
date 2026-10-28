@@ -85,21 +85,6 @@ func (c Config) Resource() core.Resource {
 	return r
 }
 
-// NewFromConfig 从配置参数创建
-//
-// Deprecated: 位置参数过多且难扩展，建议使用 New(Config{...})
-func NewFromConfig(level, format, fileDir, filename string, console bool, maxAge int, caller bool) (*Logger, error) {
-	return New(Config{
-		Level:    core.ParseLevel(level),
-		Format:   ParseFormat(format),
-		Console:  console,
-		FileDir:  fileDir,
-		Filename: filename,
-		MaxAge:   maxAge,
-		Caller:   caller,
-	})
-}
-
 // ---- 实例方法：不带格式化 ----
 
 // 日志显示效果（text 格式，msg 后的键值对以 key=value 追加）：
@@ -171,19 +156,37 @@ func (l *Logger) Fatalf(ctx context.Context, format string, args ...any) {
 	os.Exit(1)
 }
 
-// flushHooks 刷新支持 core.Flusher 的 Hook（带短超时，避免拖住退出流程）
+// flushHooks 并行刷新支持 core.Flusher 的 Hook（共享 2 秒超时，避免拖住退出流程）
+// - 使用 WithoutCancel：Fatal 常发生在请求 ctx 已取消之后，仍应尽量发出缓冲日志
+// - 刷新失败经 reportError（Config.OnError / stderr）上报，并带 Hook 类型便于定位
 func (l *Logger) flushHooks(ctx context.Context) {
 	hs := l.hooks.Load()
 	if hs == nil {
 		return
 	}
-	flushCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
+
+	var wg sync.WaitGroup
 	for _, h := range *hs {
-		if f, ok := h.(core.Flusher); ok {
-			_ = f.Flush(flushCtx)
+		f, ok := h.(core.Flusher)
+		if !ok {
+			continue
 		}
+		wg.Add(1)
+		go func(f core.Flusher) {
+			defer wg.Done()
+			defer func() {
+				if v := recover(); v != nil {
+					fmt.Fprintf(os.Stderr, "logger: flusher panic: %v\n", v)
+				}
+			}()
+			if err := f.Flush(flushCtx); err != nil {
+				l.reportError(fmt.Errorf("flush hook %T: %w", f, err))
+			}
+		}(f)
 	}
+	wg.Wait()
 }
 
 // ---- 无 ctx 打印（log 风格） ----
@@ -305,7 +308,9 @@ func (l *Logger) reportError(err error) {
 }
 
 // Close 关闭日志文件
+// 关闭前会并行刷新实现了 core.Flusher 的 Hook（2 秒超时），确保旁路缓冲尽量发出
 func (l *Logger) Close() error {
+	l.flushHooks(context.Background())
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file != nil {

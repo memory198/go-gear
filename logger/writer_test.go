@@ -72,37 +72,6 @@ func TestNew_JSONFormat(t *testing.T) {
 	}
 }
 
-func TestNewFromConfig_FieldMapping(t *testing.T) {
-	dir := t.TempDir()
-	l, err := NewFromConfig("warn", "json", dir, "svc", true, 30, true)
-	if err != nil {
-		t.Fatalf("NewFromConfig() failed: %v", err)
-	}
-	defer l.Close()
-
-	if l.cfg.Level != core.WARN {
-		t.Errorf("Level = %v, want core.WARN", l.cfg.Level)
-	}
-	if l.cfg.Format != JSONFormat {
-		t.Errorf("Format = %v, want JSONFormat", l.cfg.Format)
-	}
-	if l.cfg.FileDir != dir {
-		t.Errorf("FileDir = %s, want %s", l.cfg.FileDir, dir)
-	}
-	if l.cfg.Filename != "svc" {
-		t.Errorf("Filename = %s, want svc", l.cfg.Filename)
-	}
-	if !l.cfg.Console {
-		t.Errorf("Console = false, want true")
-	}
-	if l.cfg.MaxAge != 30 {
-		t.Errorf("MaxAge = %d, want 30", l.cfg.MaxAge)
-	}
-	if !l.cfg.Caller {
-		t.Errorf("Caller = false, want true")
-	}
-}
-
 func TestLogFilePath(t *testing.T) {
 	tests := []struct {
 		name     string
