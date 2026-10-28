@@ -57,7 +57,7 @@ func TestSinkEmitsOTLP(t *testing.T) {
 		traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
 		spanID  = "00f067aa0ba902b7"
 	)
-	sink.Emit(context.Background(), &core.Record{
+	sink.Emit(context.Background(), core.Record{
 		Timestamp:    time.Now(),
 		Level:        core.INFO,
 		Body:         "otlp test",

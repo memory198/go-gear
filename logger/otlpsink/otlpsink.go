@@ -91,7 +91,7 @@ func New(ctx context.Context, cfg Config) (*Sink, func(context.Context) error, e
 // 链路关联：OTel Logs API 的 trace/span 由 ctx 携带（非 Record 字段）——
 // 若 ctx 已含 OTel span context（挂了 middleware.OTel）则天然对齐；
 // 否则用 Record 中的 gctx 来源 hex id 构造 SpanContext 注入 ctx。
-func (s *Sink) Emit(ctx context.Context, r *core.Record) {
+func (s *Sink) Emit(ctx context.Context, r core.Record) {
 	if !trace.SpanContextFromContext(ctx).IsValid() {
 		ctx = contextWithTraceIDs(ctx, r.TraceID, r.SpanID)
 	}

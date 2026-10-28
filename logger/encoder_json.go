@@ -15,7 +15,7 @@ type jsonEncoder struct{}
 
 const hexDigits = "0123456789abcdef"
 
-func (jsonEncoder) appendTo(b []byte, r *core.Record) []byte {
+func (jsonEncoder) appendTo(b []byte, r core.Record) []byte {
 	b = append(b, '{')
 	first := true
 

@@ -12,7 +12,7 @@ import (
 
 type textEncoder struct{}
 
-func (textEncoder) appendTo(b []byte, r *core.Record) []byte {
+func (textEncoder) appendTo(b []byte, r core.Record) []byte {
 	b = appendTime(b, r.Timestamp)
 	b = append(b, " ["...)
 	b = append(b, r.Level.String()...)

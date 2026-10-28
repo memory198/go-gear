@@ -253,13 +253,13 @@ func (l *Logger) log(ctx context.Context, level core.Level, msg string, args ...
 	// 结构化旁路：在序列化之前分发（未注册 Emitter 时无任何开销）
 	if hs := l.hooks.Load(); hs != nil {
 		for _, h := range *hs {
-			emitSafe(ctx, h, &rec) // 捕获 Hook panic，防止击穿业务日志调用
+			emitSafe(ctx, h, rec) // 捕获 Hook panic，防止击穿业务日志调用
 		}
 	}
 
 	// 复用输出缓冲；锁外完成编码（格式化），锁内只做滚动判断与写入
 	bp := bufPool.Get().(*[]byte)
-	buf := l.enc.appendTo((*bp)[:0], &rec)
+	buf := l.enc.appendTo((*bp)[:0], rec)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -283,7 +283,7 @@ func (l *Logger) log(ctx context.Context, level core.Level, msg string, args ...
 }
 
 // emitSafe 调用 Emitter 并捕获 panic（坏 Hook 不应影响业务日志调用）
-func emitSafe(ctx context.Context, e core.Emitter, r *core.Record) {
+func emitSafe(ctx context.Context, e core.Emitter, r core.Record) {
 	defer func() {
 		if v := recover(); v != nil {
 			fmt.Fprintf(os.Stderr, "logger: emitter panic: %v\n", v)

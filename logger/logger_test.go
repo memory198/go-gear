@@ -366,16 +366,18 @@ func TestHookReceivesRecord(t *testing.T) {
 	// Hook 在序列化前收到结构化 Record，且不影响落盘输出
 	l, buf := newTestLogger(core.DEBUG)
 
-	var got *core.Record
-	l.AddHook(core.HookFunc(func(ctx context.Context, r *core.Record) {
+	var got core.Record
+	received := false
+	l.AddHook(core.HookFunc(func(ctx context.Context, r core.Record) {
 		got = r
+		received = true
 	}))
 
 	ctx := context.WithValue(context.Background(), RootTraceIDKey, "r1")
 	ctx = context.WithValue(ctx, CurrentSpanIDKey, "s1")
 	l.Info(ctx, "hook test", "user_id", 123)
 
-	if got == nil {
+	if !received {
 		t.Fatal("hook should receive a record")
 	}
 	if got.Body != "hook test" || got.Level != core.INFO {
@@ -416,7 +418,7 @@ func TestAddHookConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			l.AddHook(core.HookFunc(func(context.Context, *core.Record) {}))
+			l.AddHook(core.HookFunc(func(context.Context, core.Record) {}))
 		}()
 	}
 	wg.Wait()
@@ -441,8 +443,8 @@ func TestFlushHooksOnFatal(t *testing.T) {
 
 type fakeFlusher struct{ onFlush func() }
 
-func (f *fakeFlusher) Emit(context.Context, *core.Record) {}
-func (f *fakeFlusher) Flush(context.Context) error        { f.onFlush(); return nil }
+func (f *fakeFlusher) Emit(context.Context, core.Record) {}
+func (f *fakeFlusher) Flush(context.Context) error       { f.onFlush(); return nil }
 
 func TestSetDefaultNilIgnored(t *testing.T) {
 	// SetDefault(nil) 应被忽略，包级方法不 panic
@@ -461,7 +463,7 @@ func (failWriter) Write([]byte) (int, error) { return 0, errors.New("disk full")
 
 type panicEmitter struct{}
 
-func (panicEmitter) Emit(context.Context, *core.Record) { panic("boom") }
+func (panicEmitter) Emit(context.Context, core.Record) { panic("boom") }
 
 func TestEmitterPanicRecovered(t *testing.T) {
 	// 坏 Emitter panic 不应影响日志输出

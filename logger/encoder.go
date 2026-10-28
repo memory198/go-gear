@@ -12,7 +12,7 @@ import (
 // 避免每条日志都执行 time.Format（layout 解析 + 时区计算 + string 分配）
 var (
 	timeCacheSec    atomic.Int64
-	timeCacheOffset atomic.Int32  // 时区偏移（秒），参与缓存键；同一秒不同时区不能复用
+	timeCacheOffset atomic.Int32           // 时区偏移（秒），参与缓存键；同一秒不同时区不能复用
 	timeCacheHead   atomic.Pointer[[]byte] // "2006-01-02T15:04:05"
 	timeCacheZone   atomic.Pointer[[]byte] // "+08:00" 或 "Z"
 )
@@ -57,7 +57,7 @@ var bufPool = sync.Pool{
 	},
 }
 
-// encoder 日志编码器：将 Record 序列化后追加到 dst 并返回新切片
+// encoder 日志编码器：将 Record（值副本）序列化后追加到 dst 并返回新切片
 type encoder interface {
-	appendTo(dst []byte, r *core.Record) []byte
+	appendTo(dst []byte, r core.Record) []byte
 }
