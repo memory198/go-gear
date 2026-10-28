@@ -70,8 +70,3 @@ func Fatalf(ctx context.Context, format string, args ...any) {
 
 func Print(msg string, args ...any)     { getDefault().Print(msg, args...) }
 func Printf(format string, args ...any) { getDefault().Printf(format, args...) }
-
-// Close 关闭包级默认日志打印器
-func Close() error {
-	return getDefault().Close()
-}
